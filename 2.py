@@ -98,6 +98,7 @@ ICON_MAPPING = {
 
 # --- 側邊欄 ---
 with st.sidebar:
+    st.image("1.png", use_container_width=True)
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇要顯示的設施類型", facility_types, default=facility_types)
 
