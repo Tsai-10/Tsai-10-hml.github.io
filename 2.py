@@ -136,39 +136,53 @@ with st.sidebar:
 
         # ...（略過前段不變的程式碼）
 
-    with st.expander("💬 設施留言"):
-            # 將所有地址合併（回報資料與原始資料），並去除重複
-            all_addresses = sorted(df["Address"].dropna().unique().tolist())
+      with st.expander("💬 設施留言"):
+        all_addresses = sorted(df["Address"].dropna().unique().tolist())
 
-            # 使用 selectbox 加入關鍵字搜尋功能
-            comment_address = st.selectbox(
-                "欲留言設施地址（可輸入關鍵字搜尋）",
-                options=["請選擇地址"] + all_addresses,
-                index=0
-            )
+        address_type_map = \
+        df.dropna(subset=["Address", "Type"]).drop_duplicates(subset=["Address"])[["Address", "Type"]].set_index(
+            "Address")["Type"].to_dict()
 
-            comment_text = st.text_area("留言內容")
-            comment_submit = st.button("送出留言")
+        comment_address = st.selectbox(
+            "欲留言設施地址（輸入關鍵字選擇）",
+            options=["請選擇地址"] + all_addresses,
+            index=0
+        )
 
-            if comment_submit:
-                if comment_address == "請選擇地址" or comment_text.strip() == "":
-                    st.warning("地址與留言不可空白")
-                else:
-                    new_comment = {
-                        "Address": comment_address.strip(),
-                        "Comment": comment_text.strip()
-                    }
-                    comments_data.append(new_comment)
+        if comment_address != "請選擇地址":
+            facility_type_for_comment = address_type_map.get(comment_address, "（無法辨識類型）")
+            st.info(f"📌 該地址的設施類型：**{facility_type_for_comment}**")
+        else:
+            facility_type_for_comment = None
+
+        comment_text = st.text_area("留言內容")
+        comment_submit = st.button("送出留言")
+
+        if comment_submit:
+            if comment_address == "請選擇地址" or not comment_text.strip():
+                st.warning("地址與留言不可空白")
+            else:
+                new_comment = {
+                    "Address": comment_address.strip(),
+                    "Type": facility_type_for_comment,
+                    "Comment": comment_text.strip()
+                }
+                comments_data.append(new_comment)
+                try:
                     with open(comment_file, "w", encoding="utf-8") as f:
                         json.dump(comments_data, f, ensure_ascii=False, indent=2)
                     st.success("📝 感謝您的留言！")
+                except Exception as e:
+                    st.error(f"留言存檔失敗：{e}")
 
-            st.markdown("### 💬 設施留言列表")
-            if comments_data:
-                for i, c in enumerate(comments_data[::-1], 1):
-                    st.markdown(f"**{i}. 地址：** {c['Address']}  \n**留言：** {c['Comment']}")
-            else:
-                st.write("目前尚無留言。")
+        st.markdown("### 💬 設施留言列表")
+        if comments_data:
+            for i, c in enumerate(comments_data[::-1], 1):
+                type_info = c.get("Type", "未知類型")
+                st.markdown(f"**{i}. 地址：** {c['Address']}  \n**類型：** {type_info}  \n**留言：** {c['Comment']}")
+        else:
+            st.write("目前尚無留言。")
+
 
 # --- 加上 icon 與 tooltip ---
 filtered_df = df[df["Type"].isin(selected_types)].copy()
