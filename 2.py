@@ -60,7 +60,7 @@ if address_input:
 
 # --- 載入設施資料 ---
 data_path = "C:/Users/amy/PycharmProjects/B11108005-2/報告/data.json"
-with open(data_path, "r", encoding="utf-8") as f:
+with open(data_path = "data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
 df = pd.DataFrame(data)
