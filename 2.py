@@ -268,11 +268,11 @@ user_layer = pdk.Layer(
 layers.append(user_layer)
 
 # --- 紅點：最近設施顯示 ---
-df["distance_from_user"] = df.apply(
+type_df["distance_from_user"] = type_df.apply(
     lambda row: geodesic((user_lat, user_lon), (row["Latitude"], row["Longitude"])).meters,
     axis=1
 )
-nearest_df = df.nsmallest(5, "distance_from_user").copy()
+nearest_df = type_df.nsmallest(5, "distance_from_user").copy()
 nearest_df["tooltip"] = nearest_df.apply(
     lambda row: f'地址：{row["Address"]}\n距離：{row["distance_from_user"]:.1f} 公尺', axis=1
 )
