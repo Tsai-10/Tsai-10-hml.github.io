@@ -8,8 +8,8 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 
 # --- 頁面設定 ---
-st.set_page_config(page_title="台北市生活便民地圖", layout="wide")
-st.title("🏙️ 台北市生活便民地圖")
+st.set_page_config(page_title="Taipei City Walk", layout="wide")
+st.title("🏙️ Taipei City Walk")
 st.markdown("查找飲水機、廁所、垃圾桶、狗便袋箱位置，並回報你發現的新地點！")
 
 # --- 使用者定位 ---
