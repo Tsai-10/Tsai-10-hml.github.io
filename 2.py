@@ -60,7 +60,7 @@ if address_input:
 
 # --- 載入設施資料 ---
 data_path = "C:/Users/amy/PycharmProjects/B11108005-2/報告/data.json"
-with open("data.json", "r", encoding="utf-8") as f:
+with open(data.json, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 df = pd.DataFrame(data)
@@ -136,7 +136,7 @@ with st.sidebar:
 
         # ...（略過前段不變的程式碼）
 
-      with st.expander("💬 設施留言"):
+    with st.expander("💬 設施留言"):
         all_addresses = sorted(df["Address"].dropna().unique().tolist())
 
         address_type_map = \
@@ -182,7 +182,6 @@ with st.sidebar:
                 st.markdown(f"**{i}. 地址：** {c['Address']}  \n**類型：** {type_info}  \n**留言：** {c['Comment']}")
         else:
             st.write("目前尚無留言。")
-
 
 # --- 加上 icon 與 tooltip ---
 filtered_df = df[df["Type"].isin(selected_types)].copy()
