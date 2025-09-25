@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import json
-import os
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
@@ -12,7 +11,7 @@ from geopy.distance import geodesic
 # =========================
 st.set_page_config(page_title="Taipei City Walk", layout="wide")
 st.title("🏙️ Taipei City Walk")
-st.markdown("查找飲水機、廁所、垃圾桶、狗便袋箱位置，並回報你發現的新地點 & 設施現況！")
+st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
 # 使用者定位
@@ -75,10 +74,10 @@ df = df.dropna(subset=["Latitude", "Longitude"])
 # =========================
 ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
-    "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=008000",
-    "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=808080",
+    "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
+    "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
     "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
-    "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=FF0000"
+    "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=FF4500"
 }
 
 # =========================
@@ -91,18 +90,24 @@ with st.sidebar:
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-    # 切換地圖風格
+    # 切換地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
         "請選擇地圖樣式：",
-        ("亮色主題", "暗色主題"),
+        ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
         index=0
     )
-    if map_theme == "亮色主題":
+
+    # 設定不同風格的 Map Style
+    if map_theme == "Carto Voyager（預設，彩色）":
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+    elif map_theme == "Carto Light（乾淨白底）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-    else:
+    elif map_theme == "Carto Dark（夜間風格）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+    else:  # OSM 標準
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 # =========================
 # 過濾資料 & 加入 icon
@@ -140,8 +145,8 @@ filtered_df["distance_from_user"] = filtered_df.apply(
     lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-nearest_df["fill_color"] = nearest_df.apply(lambda r: [255, 69, 0, 200], axis=1)  # 柔和橘紅
-nearest_df["radius"] = 15  # 半徑大一點
+nearest_df["fill_color"] = nearest_df.apply(lambda r: [255, 99, 71, 200], axis=1)  # 溫暖紅橘
+nearest_df["radius"] = 12  # 半徑適中
 
 # =========================
 # 建立地圖圖層
@@ -195,7 +200,7 @@ view_state = pdk.ViewState(
     longitude=user_lon,
     latitude=user_lat,
     zoom=15,
-    pitch=45,  # 加入視角傾斜效果
+    pitch=0,  # 不要斜視
     bearing=0
 )
 
