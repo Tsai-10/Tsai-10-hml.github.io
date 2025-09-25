@@ -15,12 +15,10 @@ st.markdown("查找飲水機、廁所、垃圾桶、狗便袋箱位置，並回�
 # --- 使用者定位 ---
 st.subheader("📍 是否允許自動定位您的位置？")
 allow_location = st.radio("請選擇：", ("是，我同意", "否，我不同意"), index=1)
-
 user_lat, user_lon = 25.0330, 121.5654  # 預設位置台北101
 
 if allow_location == "是，我同意":
-    location = st_javascript(
-        """
+    location = st_javascript("""
         navigator.geolocation.getCurrentPosition(
             (loc) => {
                 window.parent.postMessage({
@@ -32,9 +30,7 @@ if allow_location == "是，我同意":
                 window.parent.postMessage({type: 'streamlit:setComponentValue', value: null}, '*');
             }
         );
-        """,
-        key="get_location"
-    )
+    """, key="get_location")
     if location and isinstance(location, dict):
         user_lat = location.get("latitude", user_lat)
         user_lon = location.get("longitude", user_lon)
@@ -44,7 +40,7 @@ if allow_location == "是，我同意":
 else:
     st.info("ℹ️ 未啟用定位，請在下方手動輸入地址。")
 
-# --- 手動輸入地址功能 ---
+# --- 手動輸入地址 ---
 address_input = st.text_input("📍 請輸入您的地址以便定位（可選）")
 if address_input:
     geolocator = Nominatim(user_agent="taipei_map_app")
@@ -61,7 +57,6 @@ if address_input:
 # --- 載入設施資料 ---
 with open("data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
-
 df = pd.DataFrame(data)
 df.columns = df.columns.str.strip()
 df = df.rename(columns={"Longtitude": "Longitude"})
@@ -95,13 +90,12 @@ ICON_MAPPING = {
     "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=000000"
 }
 
-# --- 側邊欄功能 ---
+# --- 側邊欄設定 ---
 with st.sidebar:
     st.image("1.png", use_container_width=True)
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇要顯示的設施類型", facility_types, default=facility_types)
 
-    # 回報新地點
     with st.expander("📝 回報新地點（點我展開）"):
         with st.form("feedback_form"):
             feedback_type = st.selectbox("設施類型", facility_types)
@@ -135,28 +129,33 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"❌ 地址轉換失敗：{e}")
 
-    # 設施留言
     with st.expander("💬 設施留言"):
         all_addresses = sorted(df["Address"].dropna().unique().tolist())
         address_type_map = df.dropna(subset=["Address", "Type"]).drop_duplicates(subset=["Address"])[["Address", "Type"]].set_index("Address")["Type"].to_dict()
         comment_address = st.selectbox("欲留言設施地址（輸入關鍵字選擇）", options=["請選擇地址"] + all_addresses, index=0)
+
         if comment_address != "請選擇地址":
             facility_type_for_comment = address_type_map.get(comment_address, "（無法辨識類型）")
             st.info(f"📌 該地址的設施類型：**{facility_type_for_comment}**")
         else:
             facility_type_for_comment = None
+
         comment_text = st.text_area("留言內容")
         comment_submit = st.button("送出留言")
+
         if comment_submit:
             if comment_address == "請選擇地址" or not comment_text.strip():
                 st.warning("地址與留言不可空白")
             else:
                 new_comment = {"Address": comment_address.strip(), "Type": facility_type_for_comment, "Comment": comment_text.strip()}
                 comments_data.append(new_comment)
-                with open(comment_file, "w", encoding="utf-8") as f:
-                    json.dump(comments_data, f, ensure_ascii=False, indent=2)
-                st.success("📝 感謝您的留言！")
-        # 顯示留言
+                try:
+                    with open(comment_file, "w", encoding="utf-8") as f:
+                        json.dump(comments_data, f, ensure_ascii=False, indent=2)
+                    st.success("📝 感謝您的留言！")
+                except Exception as e:
+                    st.error(f"留言存檔失敗：{e}")
+
         st.markdown("### 💬 設施留言列表")
         if comments_data:
             for i, c in enumerate(comments_data[::-1], 1):
@@ -170,6 +169,7 @@ filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {"url": ICON_MAPPING.get(x, ""), "width": 40, "height": 40, "anchorY": 40})
 filtered_df["tooltip"] = filtered_df["Address"]
 
+# --- 使用者位置圖示 ---
 user_pos_df = pd.DataFrame([{
     "Type": "使用者位置",
     "Address": "您目前的位置",
@@ -179,12 +179,13 @@ user_pos_df = pd.DataFrame([{
     "tooltip": "您目前的位置"
 }])
 
-# --- 顯示最近設施 ---
+# --- 最近設施計算 ---
 st.subheader("📍 顯示最近設施（依類型）")
 facility_types = sorted(filtered_df["Type"].unique())
 selected_type = st.selectbox("請選擇設施類型", options=facility_types)
 type_df = filtered_df[filtered_df["Type"] == selected_type].copy()
 type_df["distance_from_user"] = type_df.apply(lambda row: geodesic((user_lat, user_lon), (row["Latitude"], row["Longitude"])).meters, axis=1)
+
 st.markdown(f"### 🔍 離您最近的「{selected_type}」前五名")
 if not type_df.empty:
     closest_type_df = type_df.sort_values("distance_from_user").head(5)
@@ -196,30 +197,78 @@ else:
     st.write("目前無符合條件的設施。")
 
 # --- 地圖圖層 ---
-view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=16, pitch=0, bearing=0)
-
-nearest_df = type_df.nsmallest(5, "distance_from_user").copy()
-nearest_df["radius"] = 50
-nearest_df["color"] = [[255, 0, 0, 80]] * len(nearest_df)
-halo_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]',
-                        get_fill_color='color', get_radius='radius', pickable=False, auto_highlight=False)
-
-red_dot_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]',
-                          get_fill_color='[255, 0, 0, 220]', get_radius=20, pickable=True, auto_highlight=True, tooltip=True)
-
 layers = []
+
+# --- 設施 icon 層 ---
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type].copy()
     if sub_df.empty: continue
-    icon_layer = pdk.Layer("IconLayer", data=sub_df, get_icon="icon_data", get_size=4, size_scale=15,
-                           get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True, name=f_type)
+    icon_layer = pdk.Layer(
+        "IconLayer",
+        data=sub_df,
+        get_icon="icon_data",
+        get_size=3,
+        size_scale=12,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name=f_type
+    )
     layers.append(icon_layer)
 
-user_layer = pdk.Layer("IconLayer", data=user_pos_df, get_icon="icon_data", get_size=5, size_scale=25,
-                       get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True)
+# --- 使用者位置圖層 ---
+user_layer = pdk.Layer(
+    "IconLayer",
+    data=user_pos_df,
+    get_icon="icon_data",
+    get_size=4,
+    size_scale=20,
+    get_position='[Longitude, Latitude]',
+    pickable=True,
+    auto_highlight=True
+)
 layers.append(user_layer)
+
+# --- 最近設施紅點 + 光暈 ---
+nearest_df = type_df.nsmallest(5, "distance_from_user").copy()
+halo_df = nearest_df.copy()
+halo_df["radius"] = [50, 70, 90, 110, 130][:len(halo_df)]
+halo_df["color"] = [[255,0,0,50]]*len(halo_df)
+
+halo_layer = pdk.Layer(
+    "ScatterplotLayer",
+    data=halo_df,
+    get_position='[Longitude, Latitude]',
+    get_fill_color='color',
+    get_radius='radius',
+    pickable=False,
+    auto_highlight=False
+)
 layers.append(halo_layer)
+
+red_dot_layer = pdk.Layer(
+    "ScatterplotLayer",
+    data=nearest_df,
+    get_position='[Longitude, Latitude]',
+    get_fill_color='[255,0,0,220]',
+    get_radius=15,
+    pickable=True,
+    auto_highlight=True,
+    tooltip='地址：{Address}\n距離：{distance_from_user:.1f} 公尺'
+)
 layers.append(red_dot_layer)
 
-st.pydeck_chart(pdk.Deck(map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-                         initial_view_state=view_state, layers=layers, tooltip={"text": "{tooltip}"}))
+# --- 地圖視角 ---
+view_state = pdk.ViewState(
+    longitude=user_lon,
+    latitude=user_lat,
+    zoom=15,
+    pitch=0
+)
+
+st.pydeck_chart(pdk.Deck(
+    map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",  # 可改亮色
+    initial_view_state=view_state,
+    layers=layers,
+    tooltip={"text": "{tooltip}"}
+))
