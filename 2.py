@@ -19,181 +19,118 @@ user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
 
 if allow_location == "是，我同意":
     location = st_javascript("""
-    navigator.geolocation.getCurrentPosition(
-        (loc) => {
-            window.parent.postMessage({type:'streamlit:setComponentValue', value:{latitude:loc.coords.latitude, longitude:loc.coords.longitude}}, '*');
-        },
-        (err) => { window.parent.postMessage({type:'streamlit:setComponentValue', value:null}, '*'); }
-    );
+        navigator.geolocation.getCurrentPosition(
+            (loc) => {
+                window.parent.postMessage({
+                    type: 'streamlit:setComponentValue',
+                    value: {latitude: loc.coords.latitude, longitude: loc.coords.longitude}
+                }, '*');
+            },
+            (err) => {
+                window.parent.postMessage({type: 'streamlit:setComponentValue', value: null}, '*');
+            }
+        );
     """, key="get_location")
     if location and isinstance(location, dict):
         user_lat = location.get("latitude", user_lat)
         user_lon = location.get("longitude", user_lon)
-        st.success(f"✅ 已自動定位到您目前的位置：({user_lat:.5f}, {user_lon:.5f})")
+        st.success(f"✅ 已自動定位：({user_lat:.5f}, {user_lon:.5f})")
     else:
-        st.warning("⚠️ 無法取得定位，請在下方手動輸入地址。")
+        st.warning("⚠️ 無法取得定位，請手動輸入地址。")
 else:
-    st.info("ℹ️ 未啟用定位，請在下方手動輸入地址。")
+    st.info("ℹ️ 未啟用定位，請手動輸入地址。")
 
 # --- 手動輸入地址 ---
-address_input = st.text_input("📍 請輸入您的地址以便定位（可選）")
+address_input = st.text_input("📍 請輸入地址（可選）")
 if address_input:
     geolocator = Nominatim(user_agent="taipei_map_app")
     try:
         location = geolocator.geocode(address_input, timeout=10)
         if location:
             user_lat, user_lon = location.latitude, location.longitude
-            st.success(f"✅ 已定位到輸入地址的位置：({user_lat:.5f}, {user_lon:.5f})")
+            st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
         else:
-            st.error("❌ 找不到該地址，請確認輸入正確。")
+            st.error("❌ 找不到地址")
     except Exception as e:
         st.error(f"❌ 地址轉換失敗：{e}")
 
-# --- 載入資料 ---
+# --- 載入設施資料 ---
 with open("data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
 df = pd.DataFrame(data)
 df.columns = df.columns.str.strip()
 df = df.rename(columns={"Longtitude": "Longitude"})
-df = df.dropna(subset=["Latitude","Longitude"])
+df = df.dropna(subset=["Latitude", "Longitude"])
 
-# --- 使用者回報資料 ---
+# --- 載入使用者回報資料 ---
 feedback_file = "user_feedback.json"
 if os.path.exists(feedback_file):
-    with open(feedback_file,"r",encoding="utf-8") as f:
+    with open(feedback_file, "r", encoding="utf-8") as f:
         feedback_data = json.load(f)
     df_feedback = pd.DataFrame(feedback_data)
     if not df_feedback.empty:
         if "Longtitude" in df_feedback.columns:
-            df_feedback = df_feedback.rename(columns={"Longtitude":"Longitude"})
+            df_feedback = df_feedback.rename(columns={"Longtitude": "Longitude"})
         df = pd.concat([df, df_feedback], ignore_index=True)
 
-# --- 留言資料 ---
+# --- 載入留言資料 ---
 comment_file = "user_comments.json"
 if os.path.exists(comment_file):
-    with open(comment_file,"r",encoding="utf-8") as f:
+    with open(comment_file, "r", encoding="utf-8") as f:
         comments_data = json.load(f)
 else:
     comments_data = []
 
-# --- 圖標對應 ---
+# --- 設施圖標對應 ---
 ICON_MAPPING = {
-    "飲水機":"https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=000000",
-    "廁所":"https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=000000",
-    "垃圾桶":"https://img.icons8.com/?size=100&id=102715&format=png&color=000000",
-    "狗便袋箱":"https://img.icons8.com/?size=100&id=124062&format=png&color=000000",
-    "使用者位置":"https://img.icons8.com/?size=100&id=114900&format=png&color=000000"
+    "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=000000",
+    "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=000000",
+    "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=000000",
+    "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=000000",
+    "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=000000"
 }
 
-# --- 側邊欄選單 ---
+# --- 側邊欄 ---
 with st.sidebar:
     st.image("1.png", use_container_width=True)
-    facility_types = sorted(df["Type"].unique())
-    selected_types = st.multiselect("✅ 選擇要顯示的設施類型", facility_types, default=facility_types)
+    facility_types = sorted(df["Type"].unique().tolist())
+    selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-    with st.expander("📝 回報新地點"):
-        with st.form("feedback_form"):
-            feedback_type = st.selectbox("設施類型", facility_types)
-            feedback_address = st.text_input("地址")
-            submitted = st.form_submit_button("提交")
-            if submitted:
-                if feedback_address.strip()=="":
-                    st.warning("請填寫地址")
-                else:
-                    geolocator = Nominatim(user_agent="taipei_map_app")
-                    try:
-                        location = geolocator.geocode(feedback_address,timeout=10)
-                        if location:
-                            new_entry = {
-                                "Type":feedback_type,
-                                "Address":feedback_address,
-                                "Latitude":location.latitude,
-                                "Longitude":location.longitude
-                            }
-                            if os.path.exists(feedback_file):
-                                with open(feedback_file,"r",encoding="utf-8") as f:
-                                    feedback_data = json.load(f)
-                            else:
-                                feedback_data=[]
-                            feedback_data.append(new_entry)
-                            with open(feedback_file,"w",encoding="utf-8") as f:
-                                json.dump(feedback_data,f,ensure_ascii=False,indent=2)
-                            st.success("🎉 回報成功！")
-                        else:
-                            st.error("❌ 找不到該地址")
-                    except Exception as e:
-                        st.error(f"❌ 地址轉換失敗：{e}")
-
-    with st.expander("💬 設施留言"):
-        all_addresses = sorted(df["Address"].dropna().unique())
-        address_type_map = df.dropna(subset=["Address","Type"]).drop_duplicates(subset=["Address"])[["Address","Type"]].set_index("Address")["Type"].to_dict()
-        comment_address = st.selectbox("欲留言設施地址", options=["請選擇地址"]+all_addresses, index=0)
-        if comment_address != "請選擇地址":
-            facility_type_for_comment = address_type_map.get(comment_address,"未知類型")
-            st.info(f"📌 設施類型：{facility_type_for_comment}")
-        else:
-            facility_type_for_comment = None
-        comment_text = st.text_area("留言內容")
-        comment_submit = st.button("送出留言")
-        if comment_submit:
-            if comment_address=="請選擇地址" or not comment_text.strip():
-                st.warning("地址與留言不可空白")
-            else:
-                new_comment = {"Address":comment_address.strip(),"Type":facility_type_for_comment,"Comment":comment_text.strip()}
-                comments_data.append(new_comment)
-                try:
-                    with open(comment_file,"w",encoding="utf-8") as f:
-                        json.dump(comments_data,f,ensure_ascii=False,indent=2)
-                    st.success("📝 感謝留言！")
-                except Exception as e:
-                    st.error(f"留言存檔失敗：{e}")
-
-        st.markdown("### 💬 設施留言列表")
-        if comments_data:
-            for i,c in enumerate(comments_data[::-1],1):
-                st.markdown(f"**{i}. 地址：** {c['Address']}  \n**類型：** {c.get('Type','未知')}  \n**留言：** {c['Comment']}")
-        else:
-            st.write("目前尚無留言。")
-
-# --- DataFrame 處理 ---
+# --- 過濾資料並加入 icon/tooltip ---
 filtered_df = df[df["Type"].isin(selected_types)].copy()
-filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {"url":ICON_MAPPING.get(x,""),"width":40,"height":40,"anchorY":40})
+filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
+    "url": ICON_MAPPING.get(x, ""),
+    "width": 40,
+    "height": 40,
+    "anchorY": 40
+})
 filtered_df["tooltip"] = filtered_df["Address"]
 
+# --- 使用者位置 ---
 user_pos_df = pd.DataFrame([{
-    "Type":"使用者位置",
-    "Address":"您目前的位置",
-    "Latitude":user_lat,
-    "Longitude":user_lon,
-    "icon_data":{"url":ICON_MAPPING["使用者位置"],"width":50,"height":50,"anchorY":80},
-    "tooltip":"您目前的位置"
+    "Type": "使用者位置",
+    "Address": "您目前的位置",
+    "Latitude": user_lat,
+    "Longitude": user_lon,
+    "icon_data": {"url": ICON_MAPPING["使用者位置"], "width":50,"height":50,"anchorY":80},
+    "tooltip": "您目前的位置"
 }])
 
-# --- 顯示最近設施 ---
-st.subheader("📍 顯示最近設施（依類型）")
-facility_types = sorted(filtered_df["Type"].unique())
-selected_type = st.selectbox("請選擇設施類型", facility_types)
-type_df = filtered_df[filtered_df["Type"]==selected_type].copy()
-type_df["distance_from_user"] = type_df.apply(lambda row: geodesic((user_lat,user_lon),(row["Latitude"],row["Longitude"])).meters,axis=1)
-st.markdown(f"### 🔍 離您最近的「{selected_type}」前五名")
-if not type_df.empty:
-    closest_type_df = type_df.sort_values("distance_from_user").head(5)
-    display_df = closest_type_df[["Type","Address","distance_from_user"]].copy()
-    display_df["distance_from_user"]=display_df["distance_from_user"].round(1)
-    display_df = display_df.rename(columns={"Type":"設施類型","Address":"地址","distance_from_user":"距離（公尺）"})
-    st.table(display_df.reset_index(drop=True))
-else:
-    st.write("目前無符合條件的設施。")
+# --- 計算距離 & 最近設施 ---
+for f_type in selected_types:
+    filtered_df.loc[filtered_df["Type"]==f_type, "distance_from_user"] = filtered_df[filtered_df["Type"]==f_type].apply(
+        lambda r: geodesic((user_lat, user_lon),(r["Latitude"], r["Longitude"])).meters, axis=1)
 
-# --- pydeck 地圖圖層 ---
+nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+
+# --- 地圖圖層 ---
 layers = []
 
 # 設施圖層
 for f_type in selected_types:
-    sub_df = filtered_df[filtered_df["Type"]==f_type].copy()
-    if sub_df.empty:
-        continue
+    sub_df = filtered_df[filtered_df["Type"]==f_type]
+    if sub_df.empty: continue
     layers.append(pdk.Layer(
         "IconLayer",
         data=sub_df,
@@ -206,7 +143,7 @@ for f_type in selected_types:
         name=f_type
     ))
 
-# 使用者位置
+# 使用者位置圖層
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -218,42 +155,30 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施紅點+光暈
-nearest_df = type_df.nsmallest(5,"distance_from_user").copy()
-nearest_df["fill_color"] = nearest_df.apply(lambda r:[255,0,0,200],axis=1)
-nearest_df["radius"] = 12
-
-halo_df = nearest_df.copy()
-halo_df["color"] = halo_df.apply(lambda r:[255,0,0,50],axis=1)
-halo_df["radius"] = 30
-
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=halo_df,
-    get_position='[Longitude, Latitude]',
-    get_fill_color='color',
-    get_radius='radius',
-    pickable=False,
-    auto_highlight=False
-))
+# 最近設施小紅點（半透明 + 光暈）
+nearest_df["fill_color"] = nearest_df.apply(lambda r:[255,0,0,180], axis=1)
+nearest_df["radius"] = 15  # 小點
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=nearest_df,
     get_position='[Longitude, Latitude]',
-    get_fill_color='fill_color',
-    get_radius='radius',
+    get_fill_color="fill_color",
+    get_radius="radius",
     pickable=True,
     auto_highlight=True,
-    tooltip="{Address}\n距離：{distance_from_user} 公尺"
+    tooltip=True
 ))
 
-# --- 顯示地圖 ---
+# --- 地圖視圖 ---
 view_state = pdk.ViewState(
     longitude=user_lon,
     latitude=user_lat,
     zoom=15,
-    pitch=0  # 俯視
+    pitch=0,   # 俯視
+    bearing=0
 )
+
+# --- 顯示地圖 ---
 st.pydeck_chart(pdk.Deck(
     map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
     initial_view_state=view_state,
