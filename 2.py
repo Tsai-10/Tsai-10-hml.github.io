@@ -5,8 +5,6 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-import math
-import time
 
 # =========================
 # 頁面設定
@@ -92,7 +90,7 @@ with st.sidebar:
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-    # 切換地圖主題
+    # 地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
@@ -100,16 +98,12 @@ with st.sidebar:
         ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
         index=0
     )
-
-    # 設定不同風格的 Map Style
-    if map_theme == "Carto Voyager（預設，彩色）":
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-    elif map_theme == "Carto Light（乾淨白底）":
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-    elif map_theme == "Carto Dark（夜間風格）":
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-    else:  # OSM 標準
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+    MAP_STYLE = {
+        "Carto Voyager（預設，彩色）": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+        "Carto Light（乾淨白底）": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        "Carto Dark（夜間風格）": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+        "OpenStreetMap 標準": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+    }[map_theme]
 
 # =========================
 # 過濾資料 & 加入 icon
@@ -141,21 +135,30 @@ user_pos_df = pd.DataFrame([{
 }])
 
 # =========================
-# 計算距離 & 找最近的 5 個設施
+# 計算距離 & 最近 5 個設施
 # =========================
 filtered_df["distance_from_user"] = filtered_df.apply(
     lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-
-# 最近設施 icon + 明顯標示
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": "https://img.icons8.com/fluency/96/marker.png",  # 明顯地標圖示
+    "url": "https://img.icons8.com/fluency/96/marker.png",
     "width": 80,
     "height": 80,
     "anchorY": 80
 })
 nearest_df["tooltip"] = nearest_df["Address"]
+
+# =========================
+# 讓使用者選擇最近設施
+# =========================
+st.subheader("🏆 最近的 5 個設施")
+nearest_options = nearest_df.apply(lambda r: f"{r['Type']} - {r['Address']}", axis=1).tolist()
+selected_nearest = st.selectbox("選擇一個設施以聚焦地圖", nearest_options)
+
+# 找到選中的設施座標
+focus_row = nearest_df.iloc[nearest_options.index(selected_nearest)]
+focus_lat, focus_lon = focus_row["Latitude"], focus_row["Longitude"]
 
 # =========================
 # 建立地圖圖層
@@ -179,7 +182,7 @@ for f_type in selected_types:
         name=f_type
     ))
 
-# 使用者位置圖層
+# 使用者位置
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -191,7 +194,7 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施圖層：明顯標示
+# 最近設施
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -204,12 +207,12 @@ layers.append(pdk.Layer(
 ))
 
 # =========================
-# 地圖視圖
+# 地圖視圖（聚焦選中設施）
 # =========================
 view_state = pdk.ViewState(
-    longitude=user_lon,
-    latitude=user_lat,
-    zoom=15,
+    longitude=focus_lon,
+    latitude=focus_lat,
+    zoom=17,
     pitch=0,
     bearing=0
 )
@@ -223,11 +226,3 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
-
-# =========================
-# 顯示最近設施清單
-# =========================
-st.subheader("🏆 最近的 5 個設施")
-nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
-nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-st.table(nearest_df_display.reset_index(drop=True))
