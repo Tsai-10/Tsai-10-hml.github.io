@@ -1,5 +1,3 @@
-
-pip install streamlit-aggrid
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
@@ -248,4 +246,5 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
+
 
