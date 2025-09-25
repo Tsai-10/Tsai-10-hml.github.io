@@ -86,7 +86,6 @@ ICON_MAPPING = {
 # =========================
 with st.sidebar:
     st.image("1.png", use_container_width=True)
-
     # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
@@ -151,47 +150,47 @@ nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
 nearest_df["tooltip"] = nearest_df["Address"]
 
 # =========================
-# 顯示最近設施列表
+# 顯示最近設施列表（AgGrid）
 # =========================
-nearest_df["距離(m)"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f}")
-nearest_display = nearest_df[["Type", "Address", "距離(m)", "Latitude", "Longitude"]].copy()
-st.subheader("🏆 最近的 5 個設施")
-gb = GridOptionsBuilder.from_dataframe(nearest_display)
+st.subheader("🏆 最近的 5 個設施 (點選一列聚焦地圖)")
+nearest_display_df = nearest_df[["Type", "Address", "distance_from_user"]].copy()
+nearest_display_df["distance_from_user"] = nearest_display_df["distance_from_user"].round(1)
+gb = GridOptionsBuilder.from_dataframe(nearest_display_df)
 gb.configure_selection("single")
-grid_options = gb.build()
-grid_response = AgGrid(nearest_display, gridOptions=grid_options, height=200)
+grid_response = AgGrid(nearest_display_df, gridOptions=gb.build(), height=200, enable_enterprise_modules=False)
 
 # =========================
-# 判斷選中行
+# 取得選中設施
 # =========================
-if grid_response["selected_rows"]:
-    sel_row = grid_response["selected_rows"][0]
-    focus_lat, focus_lon = sel_row["Latitude"], sel_row["Longitude"]
+selected_rows = grid_response["selected_rows"] if grid_response else []
+if selected_rows:
+    focus_row = selected_rows[0]
+    focus_lat = focus_row["Latitude"] if "Latitude" in focus_row else user_lat
+    focus_lon = focus_row["Longitude"] if "Longitude" in focus_row else user_lon
 else:
-    # 預設聚焦第一個
-    focus_lat, focus_lon = nearest_df.iloc[0]["Latitude"], nearest_df.iloc[0]["Longitude"]
+    # 沒選擇時聚焦使用者位置
+    focus_lat, focus_lon = user_lat, user_lon
 
 # =========================
 # 建立地圖圖層
 # =========================
 layers = []
 
-# 一般設施
+# 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
-    if sub_df.empty:
-        continue
-    layers.append(pdk.Layer(
-        "IconLayer",
-        data=sub_df,
-        get_icon="icon_data",
-        get_size=3,
-        size_scale=12,
-        get_position='[Longitude, Latitude]',
-        pickable=True,
-        auto_highlight=True,
-        name=f_type
-    ))
+    if not sub_df.empty:
+        layers.append(pdk.Layer(
+            "IconLayer",
+            data=sub_df,
+            get_icon="icon_data",
+            get_size=3,
+            size_scale=12,
+            get_position='[Longitude, Latitude]',
+            pickable=True,
+            auto_highlight=True,
+            name=f_type
+        ))
 
 # 使用者位置
 layers.append(pdk.Layer(
@@ -205,16 +204,7 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施 + 光暈
-nearest_df["outer_color"] = [[255, 140, 0, 120]] * len(nearest_df)
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=nearest_df,
-    get_position='[Longitude, Latitude]',
-    get_radius=25,
-    get_fill_color="outer_color",
-    pickable=False
-))
+# 最近設施
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -232,7 +222,7 @@ layers.append(pdk.Layer(
 view_state = pdk.ViewState(
     longitude=focus_lon,
     latitude=focus_lat,
-    zoom=17,
+    zoom=17 if selected_rows else 15,
     pitch=0,
     bearing=0
 )
@@ -246,5 +236,3 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
-
-
