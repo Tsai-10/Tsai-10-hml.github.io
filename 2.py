@@ -195,21 +195,18 @@ if not type_df.empty:
 else:
     st.write("目前無符合條件的設施。")
 
-# --- 美化地圖（亮色 + 光暈 + 立體感） ---
-view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=16, pitch=45, bearing=0)
+# --- 地圖圖層 ---
+view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=16, pitch=0, bearing=0)
 
-# 最近設施光暈
 nearest_df = type_df.nsmallest(5, "distance_from_user").copy()
 nearest_df["radius"] = 50
 nearest_df["color"] = [[255, 0, 0, 80]] * len(nearest_df)
 halo_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]',
                         get_fill_color='color', get_radius='radius', pickable=False, auto_highlight=False)
 
-# 最近設施紅點
 red_dot_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]',
                           get_fill_color='[255, 0, 0, 220]', get_radius=20, pickable=True, auto_highlight=True, tooltip=True)
 
-# 設施圖標層
 layers = []
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type].copy()
@@ -218,15 +215,11 @@ for f_type in selected_types:
                            get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True, name=f_type)
     layers.append(icon_layer)
 
-# 使用者位置圖層
 user_layer = pdk.Layer("IconLayer", data=user_pos_df, get_icon="icon_data", get_size=5, size_scale=25,
                        get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True)
 layers.append(user_layer)
-
-# 加入光暈與紅點
 layers.append(halo_layer)
 layers.append(red_dot_layer)
 
-# 顯示地圖
 st.pydeck_chart(pdk.Deck(map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
                          initial_view_state=view_state, layers=layers, tooltip={"text": "{tooltip}"}))
