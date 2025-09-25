@@ -5,8 +5,6 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-import math
-import time
 
 # =========================
 # 頁面設定
@@ -87,7 +85,6 @@ ICON_MAPPING = {
 # =========================
 with st.sidebar:
     st.image("1.png", use_container_width=True)
-
     # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
@@ -101,7 +98,6 @@ with st.sidebar:
         index=0
     )
 
-    # 設定不同風格的 Map Style
     if map_theme == "Carto Voyager（預設，彩色）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     elif map_theme == "Carto Light（乾淨白底）":
@@ -141,21 +137,26 @@ user_pos_df = pd.DataFrame([{
 }])
 
 # =========================
-# 計算距離 & 找最近的 5 個設施
+# 計算距離 & 最近五個設施
 # =========================
 filtered_df["distance_from_user"] = filtered_df.apply(
     lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# 最近設施 icon + 動態外圈
+# 最近設施：中心白點 + 橘色光暈
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": "https://img.icons8.com/emoji/96/red-circle-emoji.png",  # 內圈紅色
-    "width": 80,
-    "height": 80,
-    "anchorY": 80
+    "url": "https://img.icons8.com/ios-filled/50/ffffff/circle.png",  # 白色圓點
+    "width": 40,
+    "height": 40,
+    "anchorY": 40
 })
 nearest_df["tooltip"] = nearest_df["Address"]
+
+nearest_df["glow_radius_outer"] = 150
+nearest_df["glow_radius_inner"] = 70
+nearest_df["glow_color_outer"] = [[255,165,0,100]] * len(nearest_df)  # 橘色半透明
+nearest_df["glow_color_inner"] = [[255,215,0,160]] * len(nearest_df)  # 金黃色半透明
 
 # =========================
 # 建立地圖圖層
@@ -165,8 +166,7 @@ layers = []
 # 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
-    if sub_df.empty:
-        continue
+    if sub_df.empty: continue
     layers.append(pdk.Layer(
         "IconLayer",
         data=sub_df,
@@ -191,16 +191,27 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施圖層：金色星形 + 光暈
-nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": "https://img.icons8.com/fluency/48/star.png",  # 金色星形
-    "width": 80,
-    "height": 80,
-    "anchorY": 80
-})
-nearest_df["tooltip"] = nearest_df["Address"]
+# 最近設施：光暈外圈
+layers.append(pdk.Layer(
+    "ScatterplotLayer",
+    data=nearest_df,
+    get_position='[Longitude, Latitude]',
+    get_radius="glow_radius_outer",
+    get_fill_color="glow_color_outer",
+    pickable=False
+))
 
-# IconLayer：顯示星形
+# 最近設施：光暈內圈
+layers.append(pdk.Layer(
+    "ScatterplotLayer",
+    data=nearest_df,
+    get_position='[Longitude, Latitude]',
+    get_radius="glow_radius_inner",
+    get_fill_color="glow_color_inner",
+    pickable=False
+))
+
+# 最近設施：中心白點
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -212,18 +223,6 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# ScatterplotLayer：光暈
-nearest_df["glow_radius"] = 150  # 固定半徑
-nearest_df["glow_color"] = [[255, 69, 0, 120]] * len(nearest_df)  # 半透明紅橘色
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=nearest_df,
-    get_position='[Longitude, Latitude]',
-    get_radius="glow_radius",
-    get_fill_color="glow_color",
-    pickable=False
-))
-
 # =========================
 # 地圖視圖
 # =========================
@@ -231,7 +230,7 @@ view_state = pdk.ViewState(
     longitude=user_lon,
     latitude=user_lat,
     zoom=15,
-    pitch=0,  # 保持平視
+    pitch=0,
     bearing=0
 )
 
@@ -244,4 +243,3 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
-
