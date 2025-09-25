@@ -87,24 +87,28 @@ ICON_MAPPING = {
 # =========================
 with st.sidebar:
     st.image("1.png", use_container_width=True)
+
+    # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
+    # 切換地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
         "請選擇地圖樣式：",
-        ("Carto Voyager（彩色）", "Carto Light（白底）", "Carto Dark（夜間）", "OpenStreetMap"),
+        ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
         index=0
     )
 
-    if map_theme == "Carto Voyager（彩色）":
+    # 設定不同風格的 Map Style
+    if map_theme == "Carto Voyager（預設，彩色）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-    elif map_theme == "Carto Light（白底）":
+    elif map_theme == "Carto Light（乾淨白底）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-    elif map_theme == "Carto Dark（夜間）":
+    elif map_theme == "Carto Dark（夜間風格）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-    else:
+    else:  # OSM 標準
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 # =========================
@@ -144,19 +148,14 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# 最近五個設施雙層圓 + 動態外圈
+# 最近設施 icon + 明顯標示
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 50,
-    "height": 50,
-    "anchorY": 50
+    "url": "https://img.icons8.com/fluency/96/marker.png",  # 明顯地標圖示
+    "width": 80,
+    "height": 80,
+    "anchorY": 80
 })
 nearest_df["tooltip"] = nearest_df["Address"]
-
-# 動態外圈顏色和半徑
-pulse_radius = 100 + 30 * math.sin(time.time() * 2)
-nearest_df["pulse_radius"] = pulse_radius
-nearest_df["pulse_color"] = [[255, 140, 0, 120]] * len(nearest_df)  # 橘色半透明
 
 # =========================
 # 建立地圖圖層
@@ -192,7 +191,7 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近五個設施圖層
+# 最近設施圖層：明顯標示
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -202,16 +201,6 @@ layers.append(pdk.Layer(
     get_position='[Longitude, Latitude]',
     pickable=True,
     auto_highlight=True
-))
-
-# 外圈呼吸圈
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=nearest_df,
-    get_position='[Longitude, Latitude]',
-    get_radius="pulse_radius",
-    get_fill_color="pulse_color",
-    pickable=False
 ))
 
 # =========================
@@ -235,7 +224,8 @@ st.pydeck_chart(pdk.Deck(
     tooltip={"text": "{tooltip}"}
 ))
 
-顯示最近設施清單
+# =========================
+# 顯示最近設施清單
 # =========================
 st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
