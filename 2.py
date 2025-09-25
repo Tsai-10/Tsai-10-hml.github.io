@@ -191,7 +191,16 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施圖層：強化效果
+# 最近設施圖層：金色星形 + 光暈
+nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+    "url": "https://img.icons8.com/fluency/48/star.png",  # 金色星形
+    "width": 80,
+    "height": 80,
+    "anchorY": 80
+})
+nearest_df["tooltip"] = nearest_df["Address"]
+
+# IconLayer：顯示星形
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -203,17 +212,15 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 外圈閃爍效果（呼吸圈）
-pulse_radius = 150 + 40 * math.sin(time.time() * 2)
-nearest_df["pulse_radius"] = pulse_radius
-nearest_df["pulse_color"] = [[255, 69, 0, 100]] * len(nearest_df)
-
+# ScatterplotLayer：光暈
+nearest_df["glow_radius"] = 150  # 固定半徑
+nearest_df["glow_color"] = [[255, 69, 0, 120]] * len(nearest_df)  # 半透明紅橘色
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=nearest_df,
     get_position='[Longitude, Latitude]',
-    get_radius="pulse_radius",
-    get_fill_color="pulse_color",
+    get_radius="glow_radius",
+    get_fill_color="glow_color",
     pickable=False
 ))
 
@@ -237,3 +244,4 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
+
