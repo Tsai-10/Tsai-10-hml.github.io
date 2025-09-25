@@ -5,6 +5,8 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+import math
+import time
 
 # =========================
 # 頁面設定
@@ -145,15 +147,22 @@ filtered_df["distance_from_user"] = filtered_df.apply(
     lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-nearest_df["fill_color"] = nearest_df.apply(lambda r: [255, 99, 71, 200], axis=1)  # 溫暖紅橘
-nearest_df["radius"] = 12  # 半徑適中
+
+# 最近設施 icon + 動態外圈
+nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+    "url": "https://img.icons8.com/emoji/96/red-circle-emoji.png",  # 內圈紅色
+    "width": 80,
+    "height": 80,
+    "anchorY": 80
+})
+nearest_df["tooltip"] = nearest_df["Address"]
 
 # =========================
 # 建立地圖圖層
 # =========================
 layers = []
 
-# 設施圖層
+# 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
     if sub_df.empty:
@@ -182,15 +191,30 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施紅點
+# 最近設施圖層：強化效果
+layers.append(pdk.Layer(
+    "IconLayer",
+    data=nearest_df,
+    get_icon="icon_data",
+    get_size=6,
+    size_scale=15,
+    get_position='[Longitude, Latitude]',
+    pickable=True,
+    auto_highlight=True
+))
+
+# 外圈閃爍效果（呼吸圈）
+pulse_radius = 150 + 40 * math.sin(time.time() * 2)
+nearest_df["pulse_radius"] = pulse_radius
+nearest_df["pulse_color"] = [[255, 69, 0, 100]] * len(nearest_df)
+
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=nearest_df,
     get_position='[Longitude, Latitude]',
-    get_fill_color="fill_color",
-    get_radius="radius",
-    pickable=True,
-    auto_highlight=True
+    get_radius="pulse_radius",
+    get_fill_color="pulse_color",
+    pickable=False
 ))
 
 # =========================
@@ -200,7 +224,7 @@ view_state = pdk.ViewState(
     longitude=user_lon,
     latitude=user_lat,
     zoom=15,
-    pitch=0,  # 不要斜視
+    pitch=0,  # 保持平視
     bearing=0
 )
 
