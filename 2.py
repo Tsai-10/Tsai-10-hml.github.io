@@ -298,8 +298,9 @@ view_state = pdk.ViewState(
     pitch=0
 )
 st.pydeck_chart(pdk.Deck(
-    map_style="mapbox://styles/mapbox/streets-v11",
+    map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",  # OSM 免費底圖
     initial_view_state=view_state,
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
+
