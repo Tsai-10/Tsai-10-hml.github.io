@@ -57,30 +57,10 @@ if address_input:
 # --- 載入設施資料 ---
 with open("data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
-
 df = pd.DataFrame(data)
 df.columns = df.columns.str.strip()
 df = df.rename(columns={"Longtitude": "Longitude"})
 df = df.dropna(subset=["Latitude", "Longitude"])
-
-# --- 載入使用者回報資料 ---
-feedback_file = "user_feedback.json"
-if os.path.exists(feedback_file):
-    with open(feedback_file, "r", encoding="utf-8") as f:
-        feedback_data = json.load(f)
-    df_feedback = pd.DataFrame(feedback_data)
-    if not df_feedback.empty:
-        if "Longtitude" in df_feedback.columns:
-            df_feedback = df_feedback.rename(columns={"Longtitude": "Longitude"})
-        df = pd.concat([df, df_feedback], ignore_index=True)
-
-# --- 載入留言資料 ---
-comment_file = "user_comments.json"
-if os.path.exists(comment_file):
-    with open(comment_file, "r", encoding="utf-8") as f:
-        comments_data = json.load(f)
-else:
-    comments_data = []
 
 # --- 設施圖標對應 ---
 ICON_MAPPING = {
@@ -91,7 +71,7 @@ ICON_MAPPING = {
     "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=000000"
 }
 
-# --- 側邊欄 ---
+# --- 側邊欄選擇 ---
 with st.sidebar:
     st.image("1.png", use_container_width=True)
     facility_types = sorted(df["Type"].unique().tolist())
@@ -118,11 +98,11 @@ user_pos_df = pd.DataFrame([{
 }])
 
 # --- 計算距離 & 最近設施 ---
-for f_type in selected_types:
-    filtered_df.loc[filtered_df["Type"]==f_type, "distance_from_user"] = filtered_df[filtered_df["Type"]==f_type].apply(
-        lambda r: geodesic((user_lat, user_lon),(r["Latitude"], r["Longitude"])).meters, axis=1)
-
+filtered_df["distance_from_user"] = filtered_df.apply(
+    lambda r: geodesic((user_lat, user_lon),(r["Latitude"], r["Longitude"])).meters, axis=1)
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+nearest_df["fill_color"] = nearest_df.apply(lambda r:[255,0,0,180], axis=1)
+nearest_df["radius"] = 10  # 小紅點
 
 # --- 地圖圖層 ---
 layers = []
@@ -143,7 +123,7 @@ for f_type in selected_types:
         name=f_type
     ))
 
-# 使用者位置圖層
+# 使用者位置
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -155,9 +135,7 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施小紅點（半透明 + 光暈）
-nearest_df["fill_color"] = nearest_df.apply(lambda r:[255,0,0,180], axis=1)
-nearest_df["radius"] = 15  # 小點
+# 最近設施小紅點
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=nearest_df,
@@ -174,11 +152,11 @@ view_state = pdk.ViewState(
     longitude=user_lon,
     latitude=user_lat,
     zoom=15,
-    pitch=0,   # 俯視
+    pitch=0,
     bearing=0
 )
 
-# --- 顯示地圖 ---
+# --- 顯示漂亮亮色地圖 ---
 st.pydeck_chart(pdk.Deck(
     map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
     initial_view_state=view_state,
