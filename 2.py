@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import json
-from st_aggrid import AgGrid, GridOptionsBuilder
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+import math
+import time
 
 # =========================
 # 頁面設定
@@ -71,36 +72,6 @@ df = df.rename(columns={"Longtitude": "Longitude"})
 df = df.dropna(subset=["Latitude", "Longitude"])
 
 # =========================
-# 計算距離 & 最近 5 個設施
-# =========================
-df["distance_from_user"] = df.apply(
-    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-)
-nearest_df = df.nsmallest(5, "distance_from_user").copy()
-nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
-nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].round(0)
-
-# =========================
-# 顯示表格（可選行）
-# =========================
-st.subheader("🏆 最近的 5 個設施")
-gb = GridOptionsBuilder.from_dataframe(nearest_df_display)
-gb.configure_selection(selection_mode="single", use_checkbox=True)
-grid_options = gb.build()
-grid_response = AgGrid(nearest_df_display, gridOptions=grid_options, enable_enterprise_modules=False, update_mode="MODEL_CHANGED")
-selected_rows = grid_response["selected_rows"]
-
-# =========================
-# 決定地圖聚焦點
-# =========================
-if selected_rows and len(selected_rows) > 0:
-    focus_row = selected_rows[0]
-    focus_lat = focus_row.get("Latitude", user_lat)
-    focus_lon = focus_row.get("Longitude", user_lon)
-else:
-    focus_lat, focus_lon = user_lat, user_lon
-
-# =========================
 # 設施圖標對應
 # =========================
 ICON_MAPPING = {
@@ -112,12 +83,38 @@ ICON_MAPPING = {
 }
 
 # =========================
-# 建立地圖圖層
+# 側邊欄設定
 # =========================
-layers = []
+with st.sidebar:
+    st.image("1.png", use_container_width=True)
 
-# 一般設施圖層
-filtered_df = df.copy()
+    # 設施篩選
+    facility_types = sorted(df["Type"].unique().tolist())
+    selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
+
+    # 切換地圖主題
+    st.markdown("---")
+    st.markdown("🗺️ **地圖主題**")
+    map_theme = st.radio(
+        "請選擇地圖樣式：",
+        ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
+        index=0
+    )
+
+    # 設定不同風格的 Map Style
+    if map_theme == "Carto Voyager（預設，彩色）":
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+    elif map_theme == "Carto Light（乾淨白底）":
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+    elif map_theme == "Carto Dark（夜間風格）":
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+    else:  # OSM 標準
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+
+# =========================
+# 過濾資料 & 加入 icon
+# =========================
+filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 40,
@@ -126,18 +123,9 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-layers.append(pdk.Layer(
-    "IconLayer",
-    data=filtered_df,
-    get_icon="icon_data",
-    get_size=3,
-    size_scale=12,
-    get_position='[Longitude, Latitude]',
-    pickable=True,
-    auto_highlight=True
-))
-
+# =========================
 # 使用者位置
+# =========================
 user_pos_df = pd.DataFrame([{
     "Type": "使用者位置",
     "Address": "您目前的位置",
@@ -152,6 +140,46 @@ user_pos_df = pd.DataFrame([{
     "tooltip": "您目前的位置"
 }])
 
+# =========================
+# 計算距離 & 找最近的 5 個設施
+# =========================
+filtered_df["distance_from_user"] = filtered_df.apply(
+    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+)
+nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+
+# 最近設施 icon + 明顯標示
+nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+    "url": "https://img.icons8.com/fluency/96/marker.png",  # 明顯地標圖示
+    "width": 80,
+    "height": 80,
+    "anchorY": 80
+})
+nearest_df["tooltip"] = nearest_df["Address"]
+
+# =========================
+# 建立地圖圖層
+# =========================
+layers = []
+
+# 一般設施圖層
+for f_type in selected_types:
+    sub_df = filtered_df[filtered_df["Type"] == f_type]
+    if sub_df.empty:
+        continue
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=sub_df,
+        get_icon="icon_data",
+        get_size=3,
+        size_scale=12,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name=f_type
+    ))
+
+# 使用者位置圖層
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -163,13 +191,25 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
+# 最近設施圖層：明顯標示
+layers.append(pdk.Layer(
+    "IconLayer",
+    data=nearest_df,
+    get_icon="icon_data",
+    get_size=6,
+    size_scale=15,
+    get_position='[Longitude, Latitude]',
+    pickable=True,
+    auto_highlight=True
+))
+
 # =========================
 # 地圖視圖
 # =========================
 view_state = pdk.ViewState(
-    longitude=focus_lon,
-    latitude=focus_lat,
-    zoom=17,
+    longitude=user_lon,
+    latitude=user_lat,
+    zoom=15,
     pitch=0,
     bearing=0
 )
@@ -178,8 +218,17 @@ view_state = pdk.ViewState(
 # 顯示地圖
 # =========================
 st.pydeck_chart(pdk.Deck(
-    map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+    map_style=MAP_STYLE,
     initial_view_state=view_state,
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
+
+# =========================
+# 顯示最近設施清單
+# =========================
+st.subheader("🏆 最近的 5 個設施")
+nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
+nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+st.table(nearest_df_display.reset_index(drop=True))
+
