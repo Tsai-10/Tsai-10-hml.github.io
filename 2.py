@@ -82,15 +82,13 @@ ICON_MAPPING = {
 }
 
 # =========================
-# 側邊欄設定
+# 側邊欄
 # =========================
 with st.sidebar:
     st.image("1.png", use_container_width=True)
-    # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-    # 地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
@@ -106,16 +104,14 @@ with st.sidebar:
     }[map_theme]
 
 # =========================
-# 過濾資料 & 加入 icon
+# 過濾資料 & 計算距離
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
-filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 40,
-    "height": 40,
-    "anchorY": 40
-})
-filtered_df["tooltip"] = filtered_df["Address"]
+filtered_df["distance_from_user"] = filtered_df.apply(
+    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+)
+nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+nearest_df["距離(公尺)"] = nearest_df["distance_from_user"].round(0)
 
 # =========================
 # 使用者位置
@@ -135,12 +131,36 @@ user_pos_df = pd.DataFrame([{
 }])
 
 # =========================
-# 計算距離 & 最近 5 個設施
+# 最近設施表格（AgGrid）
 # =========================
-filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-)
-nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+st.subheader("🏆 最近的 5 個設施")
+nearest_display = nearest_df[["Type", "Address", "距離(公尺)"]]
+gb = GridOptionsBuilder.from_dataframe(nearest_display)
+gb.configure_selection(selection_mode="single", use_checkbox=False)
+grid_response = AgGrid(nearest_display, gridOptions=gb.build(), height=200, fit_columns_on_grid_load=True)
+selected_rows = grid_response["selected_rows"]
+
+# =========================
+# 聚焦選中設施
+# =========================
+if selected_rows and len(selected_rows) > 0:
+    focus_row = selected_rows[0]
+    focus_lat = focus_row.get("Latitude", user_lat)
+    focus_lon = focus_row.get("Longitude", user_lon)
+else:
+    focus_lat, focus_lon = user_lat, user_lon
+
+# =========================
+# 加入圖標資料
+# =========================
+filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
+    "url": ICON_MAPPING.get(x, ""),
+    "width": 40,
+    "height": 40,
+    "anchorY": 40
+})
+filtered_df["tooltip"] = filtered_df["Address"]
+
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": "https://img.icons8.com/fluency/96/marker.png",
     "width": 80,
@@ -150,33 +170,10 @@ nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
 nearest_df["tooltip"] = nearest_df["Address"]
 
 # =========================
-# 顯示最近設施列表（AgGrid）
-# =========================
-st.subheader("🏆 最近的 5 個設施 (點選一列聚焦地圖)")
-nearest_display_df = nearest_df[["Type", "Address", "distance_from_user"]].copy()
-nearest_display_df["distance_from_user"] = nearest_display_df["distance_from_user"].round(1)
-gb = GridOptionsBuilder.from_dataframe(nearest_display_df)
-gb.configure_selection("single")
-grid_response = AgGrid(nearest_display_df, gridOptions=gb.build(), height=200, enable_enterprise_modules=False)
-
-# =========================
-# 取得選中設施
-# =========================
-selected_rows = grid_response["selected_rows"] if grid_response else []
-if selected_rows:
-    focus_row = selected_rows[0]
-    focus_lat = focus_row["Latitude"] if "Latitude" in focus_row else user_lat
-    focus_lon = focus_row["Longitude"] if "Longitude" in focus_row else user_lon
-else:
-    # 沒選擇時聚焦使用者位置
-    focus_lat, focus_lon = user_lat, user_lon
-
-# =========================
-# 建立地圖圖層
+# 建立圖層
 # =========================
 layers = []
 
-# 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
     if not sub_df.empty:
@@ -222,7 +219,7 @@ layers.append(pdk.Layer(
 view_state = pdk.ViewState(
     longitude=focus_lon,
     latitude=focus_lat,
-    zoom=17 if selected_rows else 15,
+    zoom=17,
     pitch=0,
     bearing=0
 )
