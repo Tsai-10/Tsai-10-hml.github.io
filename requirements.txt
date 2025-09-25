@@ -3,3 +3,5 @@ pandas
 pydeck
 geopy
 streamlit-javascript
+streamlit-aggrid
+
