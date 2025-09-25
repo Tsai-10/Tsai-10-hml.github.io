@@ -5,6 +5,8 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+import math
+import time
 
 # =========================
 # 頁面設定
@@ -85,25 +87,22 @@ ICON_MAPPING = {
 # =========================
 with st.sidebar:
     st.image("1.png", use_container_width=True)
-
-    # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-    # 切換地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
         "請選擇地圖樣式：",
-        ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
+        ("Carto Voyager（彩色）", "Carto Light（白底）", "Carto Dark（夜間）", "OpenStreetMap"),
         index=0
     )
 
-    if map_theme == "Carto Voyager（預設，彩色）":
+    if map_theme == "Carto Voyager（彩色）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-    elif map_theme == "Carto Light（乾淨白底）":
+    elif map_theme == "Carto Light（白底）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-    elif map_theme == "Carto Dark（夜間風格）":
+    elif map_theme == "Carto Dark（夜間）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
     else:
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
@@ -145,12 +144,19 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# 最近設施圖層：彩色圓形 + 光暈
-nearest_df["fill_color"] = nearest_df.apply(lambda r: [255, 140, 0, 200], axis=1)  # 橘色
-nearest_df["stroke_color"] = nearest_df.apply(lambda r: [255, 215, 0, 100], axis=1)  # 外圈金色半透明
-nearest_df["radius"] = 12
-nearest_df["stroke_width"] = 10
+# 最近五個設施雙層圓 + 動態外圈
+nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+    "url": ICON_MAPPING.get(x, ""),
+    "width": 50,
+    "height": 50,
+    "anchorY": 50
+})
 nearest_df["tooltip"] = nearest_df["Address"]
+
+# 動態外圈顏色和半徑
+pulse_radius = 100 + 30 * math.sin(time.time() * 2)
+nearest_df["pulse_radius"] = pulse_radius
+nearest_df["pulse_color"] = [[255, 140, 0, 120]] * len(nearest_df)  # 橘色半透明
 
 # =========================
 # 建立地圖圖層
@@ -186,25 +192,25 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施圖層：彩色圓 + 光暈
+# 最近五個設施圖層
 layers.append(pdk.Layer(
-    "ScatterplotLayer",
+    "IconLayer",
     data=nearest_df,
+    get_icon="icon_data",
+    get_size=6,
+    size_scale=15,
     get_position='[Longitude, Latitude]',
-    get_fill_color="fill_color",
-    get_radius="radius",
     pickable=True,
-    auto_highlight=True,
-    tooltip=True
+    auto_highlight=True
 ))
 
-# 光暈效果
+# 外圈呼吸圈
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=nearest_df,
     get_position='[Longitude, Latitude]',
-    get_fill_color="stroke_color",
-    get_radius="stroke_width",
+    get_radius="pulse_radius",
+    get_fill_color="pulse_color",
     pickable=False
 ))
 
