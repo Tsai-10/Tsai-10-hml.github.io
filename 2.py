@@ -101,7 +101,7 @@ with st.sidebar:
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇要顯示的設施類型", facility_types, default=facility_types)
 
-    with st.expander("📝 回報新地點"):
+    with st.expander("📝 回報新地點（點我展開）"):
         with st.form("feedback_form"):
             feedback_type = st.selectbox("設施類型", facility_types)
             feedback_address = st.text_input("地址")
@@ -137,26 +137,19 @@ with st.sidebar:
     with st.expander("💬 設施留言"):
         all_addresses = sorted(df["Address"].dropna().unique().tolist())
         address_type_map = df.dropna(subset=["Address", "Type"]).drop_duplicates(subset=["Address"])[["Address", "Type"]].set_index("Address")["Type"].to_dict()
-        comment_address = st.selectbox("欲留言設施地址", options=["請選擇地址"] + all_addresses, index=0)
-
+        comment_address = st.selectbox("欲留言設施地址（輸入關鍵字選擇）", options=["請選擇地址"] + all_addresses, index=0)
         if comment_address != "請選擇地址":
-            facility_type_for_comment = address_type_map.get(comment_address, "未知類型")
-            st.info(f"📌 設施類型：**{facility_type_for_comment}**")
+            facility_type_for_comment = address_type_map.get(comment_address, "（無法辨識類型）")
+            st.info(f"📌 該地址的設施類型：**{facility_type_for_comment}**")
         else:
             facility_type_for_comment = None
-
         comment_text = st.text_area("留言內容")
         comment_submit = st.button("送出留言")
-
         if comment_submit:
             if comment_address == "請選擇地址" or not comment_text.strip():
                 st.warning("地址與留言不可空白")
             else:
-                new_comment = {
-                    "Address": comment_address.strip(),
-                    "Type": facility_type_for_comment,
-                    "Comment": comment_text.strip()
-                }
+                new_comment = {"Address": comment_address.strip(), "Type": facility_type_for_comment, "Comment": comment_text.strip()}
                 comments_data.append(new_comment)
                 try:
                     with open(comment_file, "w", encoding="utf-8") as f:
@@ -164,8 +157,7 @@ with st.sidebar:
                     st.success("📝 感謝您的留言！")
                 except Exception as e:
                     st.error(f"留言存檔失敗：{e}")
-
-        st.markdown("### 💬 留言列表")
+        st.markdown("### 💬 設施留言列表")
         if comments_data:
             for i, c in enumerate(comments_data[::-1], 1):
                 type_info = c.get("Type", "未知類型")
@@ -175,37 +167,18 @@ with st.sidebar:
 
 # --- 加上 icon 與 tooltip ---
 filtered_df = df[df["Type"].isin(selected_types)].copy()
-filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 40,
-    "height": 40,
-    "anchorY": 40
-})
+filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {"url": ICON_MAPPING.get(x, ""), "width": 40, "height": 40, "anchorY": 40})
 filtered_df["tooltip"] = filtered_df["Address"]
 
 # --- 使用者位置圖示 ---
-user_pos_df = pd.DataFrame([{
-    "Type": "使用者位置",
-    "Address": "您目前的位置",
-    "Latitude": user_lat,
-    "Longitude": user_lon,
-    "icon_data": {
-        "url": ICON_MAPPING["使用者位置"],
-        "width": 50,
-        "height": 50,
-        "anchorY": 80
-    },
-    "tooltip": "您目前的位置"
-}])
+user_pos_df = pd.DataFrame([{"Type": "使用者位置", "Address": "您目前的位置", "Latitude": user_lat, "Longitude": user_lon, "icon_data": {"url": ICON_MAPPING["使用者位置"], "width": 50, "height": 50, "anchorY": 80}, "tooltip": "您目前的位置"}])
 
-# --- 最近設施 ---
+# --- 顯示最近設施 ---
 st.subheader("📍 顯示最近設施（依類型）")
 facility_types = sorted(filtered_df["Type"].unique())
 selected_type = st.selectbox("請選擇設施類型", options=facility_types)
 type_df = filtered_df[filtered_df["Type"] == selected_type].copy()
-type_df["distance_from_user"] = type_df.apply(
-    lambda row: geodesic((user_lat, user_lon), (row["Latitude"], row["Longitude"])).meters, axis=1
-)
+type_df["distance_from_user"] = type_df.apply(lambda row: geodesic((user_lat, user_lon), (row["Latitude"], row["Longitude"])).meters, axis=1)
 st.markdown(f"### 🔍 離您最近的「{selected_type}」前五名")
 if not type_df.empty:
     closest_type_df = type_df.sort_values("distance_from_user").head(5)
@@ -216,60 +189,22 @@ if not type_df.empty:
 else:
     st.write("目前無符合條件的設施。")
 
-# --- PyDeck 地圖圖層 ---
+# --- 地圖圖層 ---
 layers = []
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type].copy()
     if sub_df.empty: continue
-    icon_layer = pdk.Layer(
-        "IconLayer",
-        data=sub_df,
-        get_icon="icon_data",
-        get_size=3,
-        size_scale=12,
-        get_position='[Longitude, Latitude]',
-        pickable=True,
-        auto_highlight=True,
-        name=f_type
-    )
+    icon_layer = pdk.Layer("IconLayer", data=sub_df, get_icon="icon_data", get_size=3, size_scale=12, get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True, name=f_type)
     layers.append(icon_layer)
 
-# 使用者位置
-user_layer = pdk.Layer(
-    "IconLayer",
-    data=user_pos_df,
-    get_icon="icon_data",
-    get_size=4,
-    size_scale=20,
-    get_position='[Longitude, Latitude]',
-    pickable=True,
-    auto_highlight=True
-)
+user_layer = pdk.Layer("IconLayer", data=user_pos_df, get_icon="icon_data", get_size=4, size_scale=20, get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True)
 layers.append(user_layer)
 
-# 最近設施紅點
 nearest_df = type_df.nsmallest(5, "distance_from_user").copy()
-nearest_df["tooltip"] = nearest_df.apply(
-    lambda row: f'地址：{row["Address"]}\n距離：{row["distance_from_user"]:.1f} 公尺', axis=1
-)
-red_dot_layer = pdk.Layer(
-    "ScatterplotLayer",
-    data=nearest_df,
-    get_position='[Longitude, Latitude]',
-    get_fill_color='[255, 0, 0, 160]',
-    get_radius=20,
-    pickable=True,
-    tooltip=True,
-    auto_highlight=True
-)
+nearest_df["tooltip"] = nearest_df.apply(lambda row: f'地址：{row["Address"]}\n距離：{row["distance_from_user"]:.1f} 公尺', axis=1)
+red_dot_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]', get_fill_color='[255, 0, 0, 200]', get_radius=25, pickable=True, tooltip=True, auto_highlight=True)
 layers.append(red_dot_layer)
 
-# 地圖視角
-view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=15, pitch=0)
-
-st.pydeck_chart(pdk.Deck(
-    map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-    initial_view_state=view_state,
-    layers=layers,
-    tooltip={"text": "{tooltip}"}
-))
+# --- 顯示地圖（亮色、立體感） ---
+view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=15, pitch=30)
+st.pydeck_chart(pdk.Deck(map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", initial_view_state=view_state, layers=layers, tooltip={"text": "{tooltip}"}))
