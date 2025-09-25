@@ -95,12 +95,13 @@ ICON_MAPPING = {
     "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=000000"
 }
 
-# --- 側邊欄 ---
+# --- 側邊欄功能 ---
 with st.sidebar:
     st.image("1.png", use_container_width=True)
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇要顯示的設施類型", facility_types, default=facility_types)
 
+    # 回報新地點
     with st.expander("📝 回報新地點（點我展開）"):
         with st.form("feedback_form"):
             feedback_type = st.selectbox("設施類型", facility_types)
@@ -134,6 +135,7 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"❌ 地址轉換失敗：{e}")
 
+    # 設施留言
     with st.expander("💬 設施留言"):
         all_addresses = sorted(df["Address"].dropna().unique().tolist())
         address_type_map = df.dropna(subset=["Address", "Type"]).drop_duplicates(subset=["Address"])[["Address", "Type"]].set_index("Address")["Type"].to_dict()
@@ -151,12 +153,10 @@ with st.sidebar:
             else:
                 new_comment = {"Address": comment_address.strip(), "Type": facility_type_for_comment, "Comment": comment_text.strip()}
                 comments_data.append(new_comment)
-                try:
-                    with open(comment_file, "w", encoding="utf-8") as f:
-                        json.dump(comments_data, f, ensure_ascii=False, indent=2)
-                    st.success("📝 感謝您的留言！")
-                except Exception as e:
-                    st.error(f"留言存檔失敗：{e}")
+                with open(comment_file, "w", encoding="utf-8") as f:
+                    json.dump(comments_data, f, ensure_ascii=False, indent=2)
+                st.success("📝 感謝您的留言！")
+        # 顯示留言
         st.markdown("### 💬 設施留言列表")
         if comments_data:
             for i, c in enumerate(comments_data[::-1], 1):
@@ -170,8 +170,14 @@ filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {"url": ICON_MAPPING.get(x, ""), "width": 40, "height": 40, "anchorY": 40})
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# --- 使用者位置圖示 ---
-user_pos_df = pd.DataFrame([{"Type": "使用者位置", "Address": "您目前的位置", "Latitude": user_lat, "Longitude": user_lon, "icon_data": {"url": ICON_MAPPING["使用者位置"], "width": 50, "height": 50, "anchorY": 80}, "tooltip": "您目前的位置"}])
+user_pos_df = pd.DataFrame([{
+    "Type": "使用者位置",
+    "Address": "您目前的位置",
+    "Latitude": user_lat,
+    "Longitude": user_lon,
+    "icon_data": {"url": ICON_MAPPING["使用者位置"], "width": 50, "height": 50, "anchorY": 80},
+    "tooltip": "您目前的位置"
+}])
 
 # --- 顯示最近設施 ---
 st.subheader("📍 顯示最近設施（依類型）")
@@ -189,22 +195,38 @@ if not type_df.empty:
 else:
     st.write("目前無符合條件的設施。")
 
-# --- 地圖圖層 ---
+# --- 美化地圖（亮色 + 光暈 + 立體感） ---
+view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=16, pitch=45, bearing=0)
+
+# 最近設施光暈
+nearest_df = type_df.nsmallest(5, "distance_from_user").copy()
+nearest_df["radius"] = 50
+nearest_df["color"] = [[255, 0, 0, 80]] * len(nearest_df)
+halo_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]',
+                        get_fill_color='color', get_radius='radius', pickable=False, auto_highlight=False)
+
+# 最近設施紅點
+red_dot_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]',
+                          get_fill_color='[255, 0, 0, 220]', get_radius=20, pickable=True, auto_highlight=True, tooltip=True)
+
+# 設施圖標層
 layers = []
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type].copy()
     if sub_df.empty: continue
-    icon_layer = pdk.Layer("IconLayer", data=sub_df, get_icon="icon_data", get_size=3, size_scale=12, get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True, name=f_type)
+    icon_layer = pdk.Layer("IconLayer", data=sub_df, get_icon="icon_data", get_size=4, size_scale=15,
+                           get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True, name=f_type)
     layers.append(icon_layer)
 
-user_layer = pdk.Layer("IconLayer", data=user_pos_df, get_icon="icon_data", get_size=4, size_scale=20, get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True)
+# 使用者位置圖層
+user_layer = pdk.Layer("IconLayer", data=user_pos_df, get_icon="icon_data", get_size=5, size_scale=25,
+                       get_position='[Longitude, Latitude]', pickable=True, auto_highlight=True)
 layers.append(user_layer)
 
-nearest_df = type_df.nsmallest(5, "distance_from_user").copy()
-nearest_df["tooltip"] = nearest_df.apply(lambda row: f'地址：{row["Address"]}\n距離：{row["distance_from_user"]:.1f} 公尺', axis=1)
-red_dot_layer = pdk.Layer("ScatterplotLayer", data=nearest_df, get_position='[Longitude, Latitude]', get_fill_color='[255, 0, 0, 200]', get_radius=25, pickable=True, tooltip=True, auto_highlight=True)
+# 加入光暈與紅點
+layers.append(halo_layer)
 layers.append(red_dot_layer)
 
-# --- 顯示地圖（亮色、立體感） ---
-view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=15, pitch=30)
-st.pydeck_chart(pdk.Deck(map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", initial_view_state=view_state, layers=layers, tooltip={"text": "{tooltip}"}))
+# 顯示地圖
+st.pydeck_chart(pdk.Deck(map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+                         initial_view_state=view_state, layers=layers, tooltip={"text": "{tooltip}"}))
