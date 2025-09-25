@@ -5,8 +5,6 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-import math
-import time
 
 # =========================
 # 頁面設定
@@ -79,8 +77,7 @@ ICON_MAPPING = {
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
     "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
-    "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=FF4500",
-    "最近設施": "https://img.icons8.com/emoji/96/star-emoji.png"  # 醒目中心 Icon
+    "使用者位置": "https://img.icons8.com/?size=100&id=114900&format=png&color=FF4500"
 }
 
 # =========================
@@ -88,9 +85,12 @@ ICON_MAPPING = {
 # =========================
 with st.sidebar:
     st.image("1.png", use_container_width=True)
+
+    # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
+    # 切換地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
@@ -98,6 +98,7 @@ with st.sidebar:
         ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
         index=0
     )
+
     if map_theme == "Carto Voyager（預設，彩色）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     elif map_theme == "Carto Light（乾淨白底）":
@@ -144,43 +145,36 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# =========================
-# 最近設施美化（中心 Icon + 光暈）
-# =========================
-nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING["最近設施"],
-    "width": 60,
-    "height": 60,
-    "anchorY": 60
-})
+# 最近設施圖層：彩色圓形 + 光暈
+nearest_df["fill_color"] = nearest_df.apply(lambda r: [255, 140, 0, 200], axis=1)  # 橘色
+nearest_df["stroke_color"] = nearest_df.apply(lambda r: [255, 215, 0, 100], axis=1)  # 外圈金色半透明
+nearest_df["radius"] = 12
+nearest_df["stroke_width"] = 10
 nearest_df["tooltip"] = nearest_df["Address"]
-
-# 外圈光暈半透明（固定）
-nearest_df["glow_color"] = [[255, 165, 0, 120]] * len(nearest_df)
-nearest_df["glow_radius"] = 50
 
 # =========================
 # 建立地圖圖層
 # =========================
 layers = []
 
-# 一般設施
+# 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
-    if not sub_df.empty:
-        layers.append(pdk.Layer(
-            "IconLayer",
-            data=sub_df,
-            get_icon="icon_data",
-            get_size=3,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True,
-            name=f_type
-        ))
+    if sub_df.empty:
+        continue
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=sub_df,
+        get_icon="icon_data",
+        get_size=3,
+        size_scale=12,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name=f_type
+    ))
 
-# 使用者位置
+# 使用者位置圖層
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -192,25 +186,25 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施：中心 Icon
-layers.append(pdk.Layer(
-    "IconLayer",
-    data=nearest_df,
-    get_icon="icon_data",
-    get_size=6,
-    size_scale=15,
-    get_position='[Longitude, Latitude]',
-    pickable=True,
-    auto_highlight=True
-))
-
-# 最近設施：光暈
+# 最近設施圖層：彩色圓 + 光暈
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=nearest_df,
     get_position='[Longitude, Latitude]',
-    get_radius="glow_radius",
-    get_fill_color="glow_color",
+    get_fill_color="fill_color",
+    get_radius="radius",
+    pickable=True,
+    auto_highlight=True,
+    tooltip=True
+))
+
+# 光暈效果
+layers.append(pdk.Layer(
+    "ScatterplotLayer",
+    data=nearest_df,
+    get_position='[Longitude, Latitude]',
+    get_fill_color="stroke_color",
+    get_radius="stroke_width",
     pickable=False
 ))
 
