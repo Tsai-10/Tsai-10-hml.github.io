@@ -5,6 +5,8 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+import math
+import time
 
 # =========================
 # 頁面設定
@@ -77,7 +79,7 @@ ICON_MAPPING = {
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
     "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
-    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
+    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"  # 使用者圖標改成 marker
 }
 
 # =========================
@@ -132,7 +134,7 @@ user_pos_df = pd.DataFrame([{
         "url": ICON_MAPPING["使用者位置"],
         "width": 60,
         "height": 60,
-        "anchorY": 60
+        "anchorY": 80
     },
     "tooltip": "您目前的位置"
 }])
@@ -145,14 +147,19 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# 最近設施 icon：高亮小圖示 + tooltip 顯示距離
+# 最近設施 icon + pulse effect
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": "https://img.icons8.com/fluency/96/marker.png",
+    "url": ICON_MAPPING.get(x, ""),
     "width": 50,
     "height": 50,
     "anchorY": 50
 })
-nearest_df["tooltip"] = nearest_df["Address"] + " | 距離: " + nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+nearest_df["tooltip"] = nearest_df["Address"]
+
+# 動態淡光環
+pulse_radius = 40 + 10 * math.sin(time.time() * 2)
+nearest_df["pulse_radius"] = pulse_radius
+nearest_df["pulse_color"] = [[255, 69, 0, 100]] * len(nearest_df)
 
 # =========================
 # 建立地圖圖層
@@ -193,12 +200,21 @@ layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
     get_icon="icon_data",
-    get_size=6,
-    size_scale=12,
+    get_size=5,
+    size_scale=15,
     get_position='[Longitude, Latitude]',
     pickable=True,
-    auto_highlight=True,
-    name="最近設施"
+    auto_highlight=True
+))
+
+# pulse effect layer
+layers.append(pdk.Layer(
+    "ScatterplotLayer",
+    data=nearest_df,
+    get_position='[Longitude, Latitude]',
+    get_radius="pulse_radius",
+    get_fill_color="pulse_color",
+    pickable=False
 ))
 
 # =========================
