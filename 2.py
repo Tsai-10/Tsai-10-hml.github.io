@@ -101,13 +101,14 @@ with st.sidebar:
         index=0
     )
 
+    # 設定不同風格的 Map Style
     if map_theme == "Carto Voyager（預設，彩色）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     elif map_theme == "Carto Light（乾淨白底）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
     elif map_theme == "Carto Dark（夜間風格）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-    else:
+    else:  # OSM 標準
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 # =========================
@@ -147,14 +148,19 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# 最近設施 icon + 呼吸圈動畫
+# 最近設施 icon 放大到使用者大小
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
-    "width": 50,
-    "height": 50,
-    "anchorY": 50
+    "width": 60,
+    "height": 60,
+    "anchorY": 80
 })
 nearest_df["tooltip"] = nearest_df["Address"]
+
+# 小呼吸圈動畫
+pulse_radius = 20 + 5 * math.sin(time.time() * 2)
+nearest_df["pulse_radius"] = pulse_radius
+nearest_df["pulse_color"] = [[255, 69, 0, 120]] * len(nearest_df)
 
 # =========================
 # 建立地圖圖層
@@ -190,23 +196,19 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施圖層：呼吸圈動畫
+# 最近設施圖層
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
     get_icon="icon_data",
-    get_size=5,
-    size_scale=12,
+    get_size=6,
+    size_scale=15,
     get_position='[Longitude, Latitude]',
     pickable=True,
     auto_highlight=True
 ))
 
-# 動態呼吸圈
-pulse_radius = 50 + 10 * math.sin(time.time() * 2)  # 小圈動態半徑
-nearest_df["pulse_radius"] = pulse_radius
-nearest_df["pulse_color"] = [[255, 69, 0, 120]] * len(nearest_df)
-
+# 呼吸圈圖層
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=nearest_df,
