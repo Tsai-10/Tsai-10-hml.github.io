@@ -132,9 +132,9 @@ filtered_df["tooltip"] = filtered_df["Address"]
 # 最近設施 icon（放大版）
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
-    "width": 75,
-    "height": 75,
-    "anchorY": 75
+    "width": 80,
+    "height": 80,
+    "anchorY": 80
 })
 nearest_df["tooltip"] = nearest_df["Address"]
 
@@ -146,9 +146,9 @@ user_pos_df = pd.DataFrame([{
     "Longitude": user_lon,
     "icon_data": {
         "url": ICON_MAPPING["使用者位置"],
-        "width": 75,
-        "height": 75,
-        "anchorY": 75
+        "width": 80,
+        "height": 80,
+        "anchorY": 80
     },
     "tooltip": "您目前的位置"
 }])
@@ -226,5 +226,6 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
+
 
 
