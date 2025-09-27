@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
@@ -15,34 +14,32 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 使用者定位
+# 使用者即時定位
 # =========================
-st.subheader("📍 是否允許自動定位您的位置？")
+st.subheader("📍 是否啟用即時定位？")
 allow_location = st.radio("請選擇：", ("是，我同意", "否，我不同意"), index=1)
 user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
 
 if allow_location == "是，我同意":
     location = st_javascript("""
-        navigator.geolocation.getCurrentPosition(
+        navigator.geolocation.watchPosition(
             (loc) => {
                 window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
+                    type:'streamlit:setComponentValue',
                     value: {latitude: loc.coords.latitude, longitude: loc.coords.longitude}
                 }, '*');
-            },
-            (err) => {
-                window.parent.postMessage({type: 'streamlit:setComponentValue', value: null}, '*');
             }
         );
-    """, key="get_location")
+    """, key="watch_location")
+
     if location and isinstance(location, dict):
         user_lat = location.get("latitude", user_lat)
         user_lon = location.get("longitude", user_lon)
-        st.success(f"✅ 已自動定位：({user_lat:.5f}, {user_lon:.5f})")
+        st.success(f"✅ 使用者位置：({user_lat:.5f}, {user_lon:.5f})")
     else:
         st.warning("⚠️ 無法取得定位，請手動輸入地址。")
 else:
-    st.info("ℹ️ 未啟用定位，請手動輸入地址。")
+    st.info("ℹ️ 未啟用定位，可手動輸入地址。")
 
 # =========================
 # 手動輸入地址
@@ -78,7 +75,7 @@ ICON_MAPPING = {
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
     "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
-    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"  # 使用者圖標
+    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
 }
 
 # =========================
@@ -87,11 +84,9 @@ ICON_MAPPING = {
 with st.sidebar:
     st.image("1.png", use_container_width=True)
 
-    # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-    # 切換地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
@@ -117,8 +112,6 @@ filtered_df["distance_from_user"] = filtered_df.apply(
     lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-
-# 將最近設施從一般圖層移除
 filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
 # 一般設施 icon
@@ -133,9 +126,9 @@ filtered_df["tooltip"] = filtered_df["Address"]
 # 最近設施 icon（放大版）
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
-    "width": 80,
-    "height": 80,
-    "anchorY": 80
+    "width": 60,
+    "height": 60,
+    "anchorY": 60
 })
 nearest_df["tooltip"] = nearest_df["Address"]
 
@@ -147,9 +140,9 @@ user_pos_df = pd.DataFrame([{
     "Longitude": user_lon,
     "icon_data": {
         "url": ICON_MAPPING["使用者位置"],
-        "width": 80,
-        "height": 80,
-        "anchorY": 80
+        "width": 60,
+        "height": 60,
+        "anchorY": 60
     },
     "tooltip": "您目前的位置"
 }])
@@ -159,24 +152,21 @@ user_pos_df = pd.DataFrame([{
 # =========================
 layers = []
 
-# 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
-    if sub_df.empty:
-        continue
-    layers.append(pdk.Layer(
-        "IconLayer",
-        data=sub_df,
-        get_icon="icon_data",
-        get_size=3,
-        size_scale=12,
-        get_position='[Longitude, Latitude]',
-        pickable=True,
-        auto_highlight=True,
-        name=f_type
-    ))
+    if not sub_df.empty:
+        layers.append(pdk.Layer(
+            "IconLayer",
+            data=sub_df,
+            get_icon="icon_data",
+            get_size=3,
+            size_scale=12,
+            get_position='[Longitude, Latitude]',
+            pickable=True,
+            auto_highlight=True,
+            name=f_type
+        ))
 
-# 最近設施圖層（放大）
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -189,7 +179,6 @@ layers.append(pdk.Layer(
     name="最近設施"
 ))
 
-# 使用者位置圖層
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -212,9 +201,6 @@ view_state = pdk.ViewState(
     bearing=0
 )
 
-# =========================
-# 顯示地圖
-# =========================
 st.pydeck_chart(pdk.Deck(
     map_style=MAP_STYLE,
     initial_view_state=view_state,
@@ -227,7 +213,3 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
-
-
-
-
