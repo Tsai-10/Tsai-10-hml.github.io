@@ -5,8 +5,6 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-import math
-import time
 
 # =========================
 # 頁面設定
@@ -79,8 +77,7 @@ ICON_MAPPING = {
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
     "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
-    "使用者位置": "https://img.icons8.com/fluency/96/marker.png",
-    "最近設施": "https://img.icons8.com/fluency/96/star.png"  # 高亮星形圖示
+    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
 }
 
 # =========================
@@ -101,12 +98,15 @@ with st.sidebar:
         ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
         index=0
     )
-    MAP_STYLE = {
-        "Carto Voyager（預設，彩色）": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-        "Carto Light（乾淨白底）": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-        "Carto Dark（夜間風格）": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-        "OpenStreetMap 標準": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-    }[map_theme]
+
+    if map_theme == "Carto Voyager（預設，彩色）":
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+    elif map_theme == "Carto Light（乾淨白底）":
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+    elif map_theme == "Carto Dark（夜間風格）":
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+    else:
+        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 # =========================
 # 過濾資料 & 加入 icon
@@ -132,7 +132,7 @@ user_pos_df = pd.DataFrame([{
         "url": ICON_MAPPING["使用者位置"],
         "width": 60,
         "height": 60,
-        "anchorY": 80
+        "anchorY": 60
     },
     "tooltip": "您目前的位置"
 }])
@@ -145,19 +145,14 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# 最近設施圖層（星形 + 呼吸 + 距離標籤）
-pulse_radius = 150 + 40 * math.sin(time.time() * 2)
-nearest_df["pulse_radius"] = pulse_radius
-nearest_df["pulse_color"] = [[255, 215, 0, 120]] * len(nearest_df)  # 金黃色光暈
+# 最近設施 icon：高亮小圖示 + tooltip 顯示距離
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING["最近設施"],
-    "width": 70,
-    "height": 70,
-    "anchorY": 80
+    "url": "https://img.icons8.com/fluency/96/marker.png",
+    "width": 50,
+    "height": 50,
+    "anchorY": 50
 })
-nearest_df["tooltip"] = nearest_df.apply(
-    lambda r: f"{r['Type']}：{r['Address']} ({int(r['distance_from_user'])} 公尺)", axis=1
-)
+nearest_df["tooltip"] = nearest_df["Address"] + " | 距離: " + nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 
 # =========================
 # 建立地圖圖層
@@ -167,18 +162,19 @@ layers = []
 # 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
-    if not sub_df.empty:
-        layers.append(pdk.Layer(
-            "IconLayer",
-            data=sub_df,
-            get_icon="icon_data",
-            get_size=3,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True,
-            name=f_type
-        ))
+    if sub_df.empty:
+        continue
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=sub_df,
+        get_icon="icon_data",
+        get_size=3,
+        size_scale=12,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name=f_type
+    ))
 
 # 使用者位置圖層
 layers.append(pdk.Layer(
@@ -198,20 +194,11 @@ layers.append(pdk.Layer(
     data=nearest_df,
     get_icon="icon_data",
     get_size=6,
-    size_scale=15,
+    size_scale=12,
     get_position='[Longitude, Latitude]',
     pickable=True,
-    auto_highlight=True
-))
-
-# 呼吸光暈
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=nearest_df,
-    get_position='[Longitude, Latitude]',
-    get_radius="pulse_radius",
-    get_fill_color="pulse_color",
-    pickable=False
+    auto_highlight=True,
+    name="最近設施"
 ))
 
 # =========================
