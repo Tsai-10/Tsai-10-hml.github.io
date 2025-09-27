@@ -146,9 +146,9 @@ user_pos_df = pd.DataFrame([{
     "Longitude": user_lon,
     "icon_data": {
         "url": ICON_MAPPING["使用者位置"],
-        "width": 60,
-        "height": 60,
-        "anchorY": 60
+        "width": 80,
+        "height": 80,
+        "anchorY": 80
     },
     "tooltip": "您目前的位置"
 }])
@@ -180,8 +180,8 @@ layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
     get_icon="icon_data",
-    get_size=4,
-    size_scale=20,
+    get_size=6,
+    size_scale=25,
     get_position='[Longitude, Latitude]',
     pickable=True,
     auto_highlight=True,
@@ -193,8 +193,8 @@ layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
     get_icon="icon_data",
-    get_size=4,
-    size_scale=20,
+    get_size=6,
+    size_scale=25,
     get_position='[Longitude, Latitude]',
     pickable=True,
     auto_highlight=True
@@ -226,3 +226,4 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
+
