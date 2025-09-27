@@ -5,6 +5,8 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+import math
+import time
 
 # =========================
 # 頁面設定
@@ -77,7 +79,7 @@ ICON_MAPPING = {
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
     "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
-    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"  # 使用者圖標改成 marker
+    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
 }
 
 # =========================
@@ -85,9 +87,12 @@ ICON_MAPPING = {
 # =========================
 with st.sidebar:
     st.image("1.png", use_container_width=True)
+
+    # 設施篩選
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
+    # 切換地圖主題
     st.markdown("---")
     st.markdown("🗺️ **地圖主題**")
     map_theme = st.radio(
@@ -95,6 +100,7 @@ with st.sidebar:
         ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
         index=0
     )
+
     if map_theme == "Carto Voyager（預設，彩色）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     elif map_theme == "Carto Light（乾淨白底）":
@@ -141,14 +147,14 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 
-# 最近設施 icon：加紅色邊框表示
+# 最近設施 icon + 呼吸圈動畫
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 50,
     "height": 50,
     "anchorY": 50
 })
-nearest_df["tooltip"] = nearest_df.apply(lambda r: f"{r['Address']} ({r['distance_from_user']:.0f} 公尺)", axis=1)
+nearest_df["tooltip"] = nearest_df["Address"]
 
 # =========================
 # 建立地圖圖層
@@ -158,18 +164,19 @@ layers = []
 # 一般設施圖層
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
-    if not sub_df.empty:
-        layers.append(pdk.Layer(
-            "IconLayer",
-            data=sub_df,
-            get_icon="icon_data",
-            get_size=3,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True,
-            name=f_type
-        ))
+    if sub_df.empty:
+        continue
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=sub_df,
+        get_icon="icon_data",
+        get_size=3,
+        size_scale=12,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name=f_type
+    ))
 
 # 使用者位置圖層
 layers.append(pdk.Layer(
@@ -183,17 +190,30 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# 最近設施圖層
+# 最近設施圖層：呼吸圈動畫
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
     get_icon="icon_data",
-    get_size=4,
-    size_scale=15,
+    get_size=5,
+    size_scale=12,
     get_position='[Longitude, Latitude]',
     pickable=True,
-    auto_highlight=True,
-    name="最近設施"
+    auto_highlight=True
+))
+
+# 動態呼吸圈
+pulse_radius = 50 + 10 * math.sin(time.time() * 2)  # 小圈動態半徑
+nearest_df["pulse_radius"] = pulse_radius
+nearest_df["pulse_color"] = [[255, 69, 0, 120]] * len(nearest_df)
+
+layers.append(pdk.Layer(
+    "ScatterplotLayer",
+    data=nearest_df,
+    get_position='[Longitude, Latitude]',
+    get_radius="pulse_radius",
+    get_fill_color="pulse_color",
+    pickable=False
 ))
 
 # =========================
