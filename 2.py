@@ -5,8 +5,6 @@ import json
 from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-import math
-import time
 
 # =========================
 # 頁面設定
@@ -79,7 +77,7 @@ ICON_MAPPING = {
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
     "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
-    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
+    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"  # 使用者圖標
 }
 
 # =========================
@@ -101,20 +99,28 @@ with st.sidebar:
         index=0
     )
 
-    # 設定不同風格的 Map Style
     if map_theme == "Carto Voyager（預設，彩色）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     elif map_theme == "Carto Light（乾淨白底）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
     elif map_theme == "Carto Dark（夜間風格）":
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-    else:  # OSM 標準
+    else:
         MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 # =========================
-# 過濾資料 & 加入 icon
+# 計算距離 & 找最近的 5 個設施
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
+filtered_df["distance_from_user"] = filtered_df.apply(
+    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+)
+nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+
+# 將最近設施從一般圖層移除
+filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
+
+# 一般設施 icon
 filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 40,
@@ -123,9 +129,16 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# =========================
+# 最近設施 icon（放大版）
+nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+    "url": ICON_MAPPING.get(x, ""),
+    "width": 60,
+    "height": 60,
+    "anchorY": 60
+})
+nearest_df["tooltip"] = nearest_df["Address"]
+
 # 使用者位置
-# =========================
 user_pos_df = pd.DataFrame([{
     "Type": "使用者位置",
     "Address": "您目前的位置",
@@ -135,32 +148,10 @@ user_pos_df = pd.DataFrame([{
         "url": ICON_MAPPING["使用者位置"],
         "width": 60,
         "height": 60,
-        "anchorY": 80
+        "anchorY": 60
     },
     "tooltip": "您目前的位置"
 }])
-
-# =========================
-# 計算距離 & 找最近的 5 個設施
-# =========================
-filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-)
-nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-
-# 最近設施 icon 放大到使用者大小
-nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 60,
-    "height": 60,
-    "anchorY": 80
-})
-nearest_df["tooltip"] = nearest_df["Address"]
-
-# 小呼吸圈動畫
-pulse_radius = 20 + 5 * math.sin(time.time() * 2)
-nearest_df["pulse_radius"] = pulse_radius
-nearest_df["pulse_color"] = [[255, 69, 0, 120]] * len(nearest_df)
 
 # =========================
 # 建立地圖圖層
@@ -184,6 +175,19 @@ for f_type in selected_types:
         name=f_type
     ))
 
+# 最近設施圖層（放大）
+layers.append(pdk.Layer(
+    "IconLayer",
+    data=nearest_df,
+    get_icon="icon_data",
+    get_size=4,
+    size_scale=20,
+    get_position='[Longitude, Latitude]',
+    pickable=True,
+    auto_highlight=True,
+    name="最近設施"
+))
+
 # 使用者位置圖層
 layers.append(pdk.Layer(
     "IconLayer",
@@ -194,28 +198,6 @@ layers.append(pdk.Layer(
     get_position='[Longitude, Latitude]',
     pickable=True,
     auto_highlight=True
-))
-
-# 最近設施圖層
-layers.append(pdk.Layer(
-    "IconLayer",
-    data=nearest_df,
-    get_icon="icon_data",
-    get_size=6,
-    size_scale=15,
-    get_position='[Longitude, Latitude]',
-    pickable=True,
-    auto_highlight=True
-))
-
-# 呼吸圈圖層
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=nearest_df,
-    get_position='[Longitude, Latitude]',
-    get_radius="pulse_radius",
-    get_fill_color="pulse_color",
-    pickable=False
 ))
 
 # =========================
@@ -239,9 +221,7 @@ st.pydeck_chart(pdk.Deck(
     tooltip={"text": "{tooltip}"}
 ))
 
-# =========================
 # 顯示最近設施清單
-# =========================
 st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
