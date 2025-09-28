@@ -21,6 +21,7 @@ allow_location = st.radio("請選擇：", ("是，我同意", "否，我不同�
 user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
 
 if allow_location == "是，我同意":
+    # 即時追蹤使用者位置
     location = st_javascript("""
         navigator.geolocation.watchPosition(
             (loc) => {
@@ -28,11 +29,18 @@ if allow_location == "是，我同意":
                     type:'streamlit:setComponentValue',
                     value: {latitude: loc.coords.latitude, longitude: loc.coords.longitude}
                 }, '*');
-            }
+            },
+            (err) => {
+                window.parent.postMessage({
+                    type:'streamlit:setComponentValue',
+                    value: {error: err.message}
+                }, '*');
+            },
+            {enableHighAccuracy: true}
         );
     """, key="watch_location")
 
-    if location and isinstance(location, dict):
+    if location and isinstance(location, dict) and "latitude" in location:
         user_lat = location.get("latitude", user_lat)
         user_lon = location.get("longitude", user_lon)
         st.success(f"✅ 使用者位置：({user_lat:.5f}, {user_lon:.5f})")
@@ -152,6 +160,7 @@ user_pos_df = pd.DataFrame([{
 # =========================
 layers = []
 
+# 一般設施
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
     if not sub_df.empty:
@@ -167,6 +176,7 @@ for f_type in selected_types:
             name=f_type
         ))
 
+# 最近設施（放大）
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -179,6 +189,7 @@ layers.append(pdk.Layer(
     name="最近設施"
 ))
 
+# 使用者位置
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -208,7 +219,9 @@ st.pydeck_chart(pdk.Deck(
     tooltip={"text": "{tooltip}"}
 ))
 
+# =========================
 # 顯示最近設施清單
+# =========================
 st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
