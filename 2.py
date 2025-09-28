@@ -14,46 +14,45 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 使用者定位（自動 GPS + 手動地址 fallback）
+# 使用者定位（自動 GPS + fallback）
 # =========================
 user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
 
 st.subheader("📍 定位方式")
-loc_option = st.radio("選擇定位方式：", ["自動 GPS 定位", "手動輸入地址"], index=1)
-
-if loc_option == "自動 GPS 定位":
-    st.info("⚠️ 請在本機端瀏覽器允許定位。")
-    try:
-        location = streamlit_js_eval(js_expressions="""
-            new Promise((resolve, reject) => {
+try:
+    location = streamlit_js_eval(js_expressions="""
+        new Promise((resolve, reject) => {
+            if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
                     (err) => resolve({error: err.message})
                 );
-            })
-        """, key="get_geolocation")
-        if location and isinstance(location, dict) and "lat" in location:
-            user_lat = location.get("lat", user_lat)
-            user_lon = location.get("lon", user_lon)
-            st.success(f"✅ 已取得 GPS 位置：({user_lat:.5f}, {user_lon:.5f})")
-        else:
-            st.warning("⚠️ 無法取得 GPS，將使用預設位置。")
-    except Exception as e:
-        st.warning(f"⚠️ 取得 GPS 失敗：{e}")
+            } else {
+                resolve({error: "瀏覽器不支援定位"});
+            }
+        })
+    """, key="get_geolocation")
+except Exception as e:
+    location = None
 
-elif loc_option == "手動輸入地址":
-    address_input = st.text_input("📍 請輸入地址")
+if location and isinstance(location, dict) and "lat" in location:
+    user_lat = location.get("lat", user_lat)
+    user_lon = location.get("lon", user_lon)
+    st.success(f"✅ 已取得 GPS 位置：({user_lat:.5f}, {user_lon:.5f})")
+else:
+    st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
+    address_input = st.text_input("📍 請輸入地址（可選）")
     if address_input:
         geolocator = Nominatim(user_agent="taipei_map_app")
         try:
-            location = geolocator.geocode(address_input, timeout=10)
-            if location:
-                user_lat, user_lon = location.latitude, location.longitude
+            loc = geolocator.geocode(address_input, timeout=10)
+            if loc:
+                user_lat, user_lon = loc.latitude, loc.longitude
                 st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
             else:
-                st.error("❌ 找不到地址")
+                st.error("❌ 找不到地址，使用預設位置")
         except Exception as e:
-            st.error(f"❌ 地址轉換失敗：{e}")
+            st.error(f"❌ 地址轉換失敗，使用預設位置：{e}")
 
 # =========================
 # 載入設施資料
@@ -67,9 +66,7 @@ for d in data:
     cleaned_item = {}
     for k, v in d.items():
         key = k.strip()
-        if key.lower() == "longtitude":
-            key = "Longitude"
-        elif key.lower() == "longitude":
+        if key.lower() in ["longtitude", "longitude"]:
             key = "Longitude"
         elif key.lower() == "latitude":
             key = "Latitude"
@@ -99,106 +96,106 @@ with st.sidebar:
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 計算距離 & 找最近的 5 個設施
+# 動態更新地圖函數
 # =========================
-filtered_df = df[df["Type"].isin(selected_types)].copy()
-filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-)
-nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
+def update_map(user_lat, user_lon, df, selected_types):
+    # 計算距離 & 最近 5 個設施
+    filtered_df = df[df["Type"].isin(selected_types)].copy()
+    filtered_df["distance_from_user"] = filtered_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+    filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
-# 設備 icon
-filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 40,
-    "height": 40,
-    "anchorY": 40
-})
-nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 60,
-    "height": 60,
-    "anchorY": 60
-})
-
-# 使用者位置
-user_pos_df = pd.DataFrame([{
-    "Type": "使用者位置",
-    "Address": "您目前的位置",
-    "Latitude": user_lat,
-    "Longitude": user_lon,
-    "icon_data": {
-        "url": ICON_MAPPING["使用者位置"],
+    # 設備 icon
+    filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
+        "url": ICON_MAPPING.get(x, ""),
+        "width": 40,
+        "height": 40,
+        "anchorY": 40
+    })
+    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+        "url": ICON_MAPPING.get(x, ""),
         "width": 60,
         "height": 60,
         "anchorY": 60
-    },
-    "tooltip": "您目前的位置"
-}])
+    })
+
+    # 使用者位置
+    user_pos_df = pd.DataFrame([{
+        "Type": "使用者位置",
+        "Address": "您目前的位置",
+        "Latitude": user_lat,
+        "Longitude": user_lon,
+        "icon_data": {
+            "url": ICON_MAPPING["使用者位置"],
+            "width": 60,
+            "height": 60,
+            "anchorY": 60
+        },
+        "tooltip": "您目前的位置"
+    }])
+
+    # 建立圖層
+    layers = []
+    for f_type in selected_types:
+        sub_df = filtered_df[filtered_df["Type"] == f_type]
+        if not sub_df.empty:
+            layers.append(pdk.Layer(
+                "IconLayer",
+                data=sub_df,
+                get_icon="icon_data",
+                get_size=3,
+                size_scale=12,
+                get_position='[Longitude, Latitude]',
+                pickable=True,
+                auto_highlight=True,
+                name=f_type
+            ))
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=nearest_df,
+        get_icon="icon_data",
+        get_size=4,
+        size_scale=20,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name="最近設施"
+    ))
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=user_pos_df,
+        get_icon="icon_data",
+        get_size=4,
+        size_scale=20,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True
+    ))
+
+    # 地圖視圖
+    view_state = pdk.ViewState(
+        longitude=user_lon,
+        latitude=user_lat,
+        zoom=15,
+        pitch=0,
+        bearing=0
+    )
+    st.pydeck_chart(pdk.Deck(
+        map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+        initial_view_state=view_state,
+        layers=layers,
+        tooltip={"text": "{tooltip}"}
+    ))
+
+    # 顯示最近設施清單
+    st.subheader("🏆 最近的 5 個設施")
+    nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
+    nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+    st.table(nearest_df_display.reset_index(drop=True))
 
 # =========================
-# 建立地圖圖層
+# 顯示地圖
 # =========================
-layers = []
-for f_type in selected_types:
-    sub_df = filtered_df[filtered_df["Type"] == f_type]
-    if not sub_df.empty:
-        layers.append(pdk.Layer(
-            "IconLayer",
-            data=sub_df,
-            get_icon="icon_data",
-            get_size=3,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True,
-            name=f_type
-        ))
-
-layers.append(pdk.Layer(
-    "IconLayer",
-    data=nearest_df,
-    get_icon="icon_data",
-    get_size=4,
-    size_scale=20,
-    get_position='[Longitude, Latitude]',
-    pickable=True,
-    auto_highlight=True,
-    name="最近設施"
-))
-layers.append(pdk.Layer(
-    "IconLayer",
-    data=user_pos_df,
-    get_icon="icon_data",
-    get_size=4,
-    size_scale=20,
-    get_position='[Longitude, Latitude]',
-    pickable=True,
-    auto_highlight=True
-))
-
-# =========================
-# 地圖視圖
-# =========================
-view_state = pdk.ViewState(
-    longitude=user_lon,
-    latitude=user_lat,
-    zoom=15,
-    pitch=0,
-    bearing=0
-)
-st.pydeck_chart(pdk.Deck(
-    map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-    initial_view_state=view_state,
-    layers=layers,
-    tooltip={"text": "{tooltip}"}
-))
-
-# =========================
-# 顯示最近設施清單
-# =========================
-st.subheader("🏆 最近的 5 個設施")
-nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
-nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-st.table(nearest_df_display.reset_index(drop=True))
+update_map(user_lat, user_lon, df, selected_types)
