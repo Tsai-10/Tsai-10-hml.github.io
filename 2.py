@@ -221,24 +221,40 @@ st.pydeck_chart(pdk.Deck(
 import streamlit as st
 from streamlit_javascript import st_javascript
 
-st.title("定位測試")
+st.title("即時定位測試 - 完整範例")
 
 location = st_javascript("""
-navigator.geolocation.getCurrentPosition(
-    (pos) => {
-        const coords = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude
-        };
-        return coords;
-    },
-    (err) => {
-        return {latitude: null, longitude: null, error: err.message};
-    }
-);
+() => {
+    return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                resolve({
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude
+                });
+            },
+            (err) => {
+                resolve({
+                    latitude: null,
+                    longitude: null,
+                    error: err.message
+                });
+            }
+        );
+    });
+}
 """)
 
-st.write("定位結果：", location)
+st.write("DEBUG 原始回傳：", location)
+
+if location and isinstance(location, dict):
+    if location.get("latitude") and location.get("longitude"):
+        st.success(f"✅ 使用者位置：({location['latitude']:.5f}, {location['longitude']:.5f})")
+    else:
+        st.error(f"❌ 定位失敗：{location.get('error', '未知錯誤')}")
+else:
+    st.warning("⚠️ 目前沒有定位資料")
+
 
 # =========================
 # 顯示最近設施清單
@@ -247,4 +263,5 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
+
 
