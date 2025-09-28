@@ -2,5 +2,7 @@ streamlit
 pandas
 pydeck
 geopy
-streamlit-javascript
+streamlit-javascript==0.1.5
 streamlit-aggrid
+
+
