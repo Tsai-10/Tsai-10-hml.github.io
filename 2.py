@@ -218,6 +218,27 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
+import streamlit as st
+from streamlit_javascript import st_javascript
+
+st.title("定位測試")
+
+location = st_javascript("""
+navigator.geolocation.getCurrentPosition(
+    (pos) => {
+        const coords = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude
+        };
+        return coords;
+    },
+    (err) => {
+        return {latitude: null, longitude: null, error: err.message};
+    }
+);
+""")
+
+st.write("定位結果：", location)
 
 # =========================
 # 顯示最近設施清單
@@ -226,3 +247,4 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
+
