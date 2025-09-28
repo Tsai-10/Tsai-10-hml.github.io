@@ -14,47 +14,6 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 使用者定位（自動 GPS + fallback）
-# =========================
-user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
-
-st.subheader("📍 定位方式")
-try:
-    location = streamlit_js_eval(js_expressions="""
-        new Promise((resolve, reject) => {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-                    (err) => resolve({error: err.message})
-                );
-            } else {
-                resolve({error: "瀏覽器不支援定位"});
-            }
-        })
-    """, key="get_geolocation")
-except Exception as e:
-    location = None
-
-if location and isinstance(location, dict) and "lat" in location:
-    user_lat = location.get("lat", user_lat)
-    user_lon = location.get("lon", user_lon)
-    st.success(f"✅ 已取得 GPS 位置：({user_lat:.5f}, {user_lon:.5f})")
-else:
-    st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
-    address_input = st.text_input("📍 請輸入地址（可選）")
-    if address_input:
-        geolocator = Nominatim(user_agent="taipei_map_app")
-        try:
-            loc = geolocator.geocode(address_input, timeout=10)
-            if loc:
-                user_lat, user_lon = loc.latitude, loc.longitude
-                st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
-            else:
-                st.error("❌ 找不到地址，使用預設位置")
-        except Exception as e:
-            st.error(f"❌ 地址轉換失敗，使用預設位置：{e}")
-
-# =========================
 # 載入設施資料
 # =========================
 with open("data.json", "r", encoding="utf-8") as f:
@@ -96,9 +55,65 @@ with st.sidebar:
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 動態更新地圖函數
+# 使用者位置初始化
 # =========================
-def update_map(user_lat, user_lon, df, selected_types):
+if "user_lat" not in st.session_state:
+    st.session_state.user_lat = 25.0330
+if "user_lon" not in st.session_state:
+    st.session_state.user_lon = 121.5654
+
+# =========================
+# 自動 GPS 定位
+# =========================
+st.subheader("📍 定位方式")
+try:
+    location = streamlit_js_eval(js_expressions="""
+        new Promise((resolve, reject) => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+                    (err) => resolve({error: err.message})
+                );
+            } else {
+                resolve({error: "瀏覽器不支援定位"});
+            }
+        })
+    """, key="get_geolocation")
+except Exception:
+    location = None
+
+if location and isinstance(location, dict) and "lat" in location:
+    st.session_state.user_lat = location.get("lat", st.session_state.user_lat)
+    st.session_state.user_lon = location.get("lon", st.session_state.user_lon)
+    st.success(f"✅ 已取得 GPS 位置：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
+else:
+    st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
+
+# =========================
+# 手動地址輸入表單
+# =========================
+with st.form(key="address_form"):
+    address_input = st.text_input("📍 手動輸入地址（可選）")
+    submit_button = st.form_submit_button(label="更新位置")
+    if submit_button and address_input:
+        geolocator = Nominatim(user_agent="taipei_map_app")
+        try:
+            loc = geolocator.geocode(address_input, timeout=10)
+            if loc:
+                st.session_state.user_lat = loc.latitude
+                st.session_state.user_lon = loc.longitude
+                st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
+            else:
+                st.error("❌ 找不到地址，保持原位置")
+        except Exception as e:
+            st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
+
+# =========================
+# 更新地圖函數
+# =========================
+def update_map():
+    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+
     # 計算距離 & 最近 5 個設施
     filtered_df = df[df["Type"].isin(selected_types)].copy()
     filtered_df["distance_from_user"] = filtered_df.apply(
@@ -198,4 +213,4 @@ def update_map(user_lat, user_lon, df, selected_types):
 # =========================
 # 顯示地圖
 # =========================
-update_map(user_lat, user_lon, df, selected_types)
+update_map()
