@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import json
-from streamlit_javascript import st_javascript
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+from streamlit_js_eval import streamlit_js_eval
 
 # =========================
 # 頁面設定
@@ -21,28 +21,17 @@ allow_location = st.radio("請選擇：", ("是，我同意", "否，我不同�
 user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
 
 if allow_location == "是，我同意":
-    # 即時追蹤使用者位置
-    location = st_javascript("""
-        navigator.geolocation.watchPosition(
-            (loc) => {
-                window.parent.postMessage({
-                    type:'streamlit:setComponentValue',
-                    value: {latitude: loc.coords.latitude, longitude: loc.coords.longitude}
-                }, '*');
-            },
-            (err) => {
-                window.parent.postMessage({
-                    type:'streamlit:setComponentValue',
-                    value: {error: err.message}
-                }, '*');
-            },
-            {enableHighAccuracy: true}
-        );
-    """, key="watch_location")
+    # 用 streamlit-js-eval 抓位置
+    location = streamlit_js_eval(js_expressions="""
+        navigator.geolocation.getCurrentPosition(
+            (pos) => ({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+            (err) => ({error: err.message})
+        )
+    """, key="get_geolocation")
 
-    if location and isinstance(location, dict) and "latitude" in location:
-        user_lat = location.get("latitude", user_lat)
-        user_lon = location.get("longitude", user_lon)
+    if location and isinstance(location, dict) and "lat" in location:
+        user_lat = location.get("lat", user_lat)
+        user_lon = location.get("lon", user_lon)
         st.success(f"✅ 使用者位置：({user_lat:.5f}, {user_lon:.5f})")
     else:
         st.warning("⚠️ 無法取得定位，請手動輸入地址。")
@@ -90,7 +79,7 @@ ICON_MAPPING = {
 # 側邊欄設定
 # =========================
 with st.sidebar:
-    st.image("1.png", use_container_width=True)
+    st.image("1.png", width='stretch')
 
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
@@ -122,22 +111,19 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
-# 一般設施 icon
-filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 40,
-    "height": 40,
-    "anchorY": 40
-})
-filtered_df["tooltip"] = filtered_df["Address"]
+# 設置 icon
+def get_icon_data(x, size):
+    return {
+        "url": ICON_MAPPING.get(x, ""),
+        "width": size,
+        "height": size,
+        "anchorY": size
+    }
 
-# 最近設施 icon（放大版）
-nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-    "url": ICON_MAPPING.get(x, ""),
-    "width": 60,
-    "height": 60,
-    "anchorY": 60
-})
+filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: get_icon_data(x, 40))
+nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: get_icon_data(x, 60))
+
+filtered_df["tooltip"] = filtered_df["Address"]
 nearest_df["tooltip"] = nearest_df["Address"]
 
 # 使用者位置
@@ -146,12 +132,7 @@ user_pos_df = pd.DataFrame([{
     "Address": "您目前的位置",
     "Latitude": user_lat,
     "Longitude": user_lon,
-    "icon_data": {
-        "url": ICON_MAPPING["使用者位置"],
-        "width": 60,
-        "height": 60,
-        "anchorY": 60
-    },
+    "icon_data": get_icon_data("使用者位置", 60),
     "tooltip": "您目前的位置"
 }])
 
@@ -176,7 +157,7 @@ for f_type in selected_types:
             name=f_type
         ))
 
-# 最近設施（放大）
+# 最近設施
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -218,22 +199,6 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     tooltip={"text": "{tooltip}"}
 ))
-import streamlit as st
-from streamlit_javascript import st_javascript
-
-from streamlit_js_eval import streamlit_js_eval
-import streamlit as st
-
-st.title("定位測試")
-
-location = streamlit_js_eval(js_expressions="navigator.geolocation.getCurrentPosition(
-    (pos) => ({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-    (err) => ({error: err.message})
-)", key="get_geolocation")
-
-st.write("DEBUG 原始回傳：", location)
-
-
 
 # =========================
 # 顯示最近設施清單
@@ -242,6 +207,3 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
-
-
-
