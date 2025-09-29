@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import json
+import time
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 
@@ -13,10 +14,16 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
+# 每 5 秒自動更新，不閃爍
+# =========================
+st_autorefresh = st.experimental_rerun  # 自動刷新函式
+
+# =========================
 # 使用者位置（可手動輸入）
 # =========================
-user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
+user_lat, user_lon = 25.0330, 121.5654  # 預設台北 101
 address_input = st.text_input("📍 請輸入地址（可選）")
+
 if address_input:
     geolocator = Nominatim(user_agent="taipei_map_app")
     try:
@@ -32,12 +39,30 @@ if address_input:
 # =========================
 # 載入設施資料
 # =========================
-with open("data.json", "r", encoding="utf-8") as f:
-    data = json.load(f)
-df = pd.DataFrame(data)
-df.columns = df.columns.str.strip()
-df = df.rename(columns={"Latitude\t": "Latitude", "Longtitude\t": "Longitude"})
-df = df.dropna(subset=["Latitude", "Longitude"])
+try:
+    with open("data.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+    df = pd.DataFrame(data)
+
+    # 修正欄位名稱，去除多餘空白或錯字
+    df.columns = df.columns.str.strip()
+    df = df.rename(columns={
+        "Latitude\t": "Latitude",
+        "Longtitude\t": "Longitude",
+        "Lat": "Latitude",
+        "Lng": "Longitude"
+    })
+
+    # 檢查必須欄位是否存在
+    if not {"Latitude", "Longitude"}.issubset(df.columns):
+        st.error("❌ 資料中缺少 Latitude 或 Longitude 欄位，請檢查 data.json")
+        st.stop()
+
+    df = df.dropna(subset=["Latitude", "Longitude"])
+
+except Exception as e:
+    st.error(f"❌ 載入設施資料失敗：{e}")
+    st.stop()
 
 # =========================
 # 設施圖標對應
@@ -54,7 +79,7 @@ ICON_MAPPING = {
 # 側邊欄設定
 # =========================
 with st.sidebar:
-    st.image("1.png", width='stretch')
+    st.image("1.png", use_container_width=True)
 
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
@@ -78,7 +103,7 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# 最近設施 icon（放大版）+ tooltip 顯示地址與距離
+# 最近設施 icon（放大版）
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 60,
@@ -176,3 +201,8 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
+
+# =========================
+# 5 秒自動更新
+# =========================
+st.experimental_rerun()
