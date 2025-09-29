@@ -14,10 +14,16 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 使用者即時定位（自動） 
+# 初始化 session_state
 # =========================
-user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
+if "user_lat" not in st.session_state:
+    st.session_state.user_lat = 25.0330  # 台北101預設
+if "user_lon" not in st.session_state:
+    st.session_state.user_lon = 121.5654
 
+# =========================
+# 自動即時定位
+# =========================
 try:
     location = streamlit_js_eval(js_expressions="""
         new Promise((resolve, reject) => {
@@ -29,9 +35,9 @@ try:
     """, key="get_geolocation")
 
     if location and isinstance(location, dict) and "latitude" in location:
-        user_lat = location["latitude"]
-        user_lon = location["longitude"]
-        st.success(f"✅ 使用者位置：({user_lat:.5f}, {user_lon:.5f})")
+        st.session_state.user_lat = location["latitude"]
+        st.session_state.user_lon = location["longitude"]
+        st.success(f"✅ 使用者位置：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
     else:
         st.warning("⚠️ 無法取得定位，請手動輸入地址。")
 except Exception as e:
@@ -46,8 +52,9 @@ if address_input:
     try:
         location = geolocator.geocode(address_input, timeout=10)
         if location:
-            user_lat, user_lon = location.latitude, location.longitude
-            st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
+            st.session_state.user_lat = location.latitude
+            st.session_state.user_lon = location.longitude
+            st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
         else:
             st.error("❌ 找不到地址")
     except Exception as e:
@@ -89,7 +96,8 @@ with st.sidebar:
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    lambda r: geodesic((st.session_state.user_lat, st.session_state.user_lon),
+                       (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
@@ -118,8 +126,8 @@ nearest_df["tooltip"] = nearest_df.apply(
 user_pos_df = pd.DataFrame([{
     "Type": "使用者位置",
     "Address": "您目前的位置",
-    "Latitude": user_lat,
-    "Longitude": user_lon,
+    "Latitude": st.session_state.user_lat,
+    "Longitude": st.session_state.user_lon,
     "icon_data": {
         "url": ICON_MAPPING["使用者位置"],
         "width": 60,
@@ -179,8 +187,8 @@ layers.append(pdk.Layer(
 # 地圖視圖
 # =========================
 view_state = pdk.ViewState(
-    longitude=user_lon,
-    latitude=user_lat,
+    longitude=st.session_state.user_lon,
+    latitude=st.session_state.user_lat,
     zoom=15,
     pitch=0,
     bearing=0
