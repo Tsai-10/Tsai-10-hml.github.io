@@ -1,9 +1,10 @@
-streamlit
+upgrade streamlit
 pandas
 pydeck
 geopy
 streamlit-js-eval
 streamlit-aggrid
+
 
 
 
