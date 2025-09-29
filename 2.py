@@ -54,40 +54,42 @@ with st.sidebar:
     st.image("1.png", width=250)
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
-    realtime_tracking = st.checkbox("📍 啟用即時追蹤", value=False)
 
 # =========================
-# 使用者位置初始化
+# 初始化使用者位置
 # =========================
 if "user_lat" not in st.session_state:
-    st.session_state.user_lat = 25.0330
+    st.session_state.user_lat = 25.0330  # 預設台北101
 if "user_lon" not in st.session_state:
     st.session_state.user_lon = 121.5654
 
 # =========================
-# 取得使用者定位（GPS）
+# 自動即時追蹤
 # =========================
-def get_gps_location():
-    """嘗試使用瀏覽器 GPS 定位"""
-    try:
-        location = streamlit_js_eval(js_expressions="""
-            new Promise((resolve, reject) => {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-                        (err) => resolve({error: err.message})
-                    );
-                } else {
-                    resolve({error: "瀏覽器不支援定位"});
-                }
-            })
-        """, key=f"get_geolocation_{time.time()}")  # 避免 cache
-    except Exception:
-        location = None
-    return location
+gps_data = streamlit_js_eval(js_expressions="""
+    new Promise((resolve, reject) => {
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+                (err) => resolve({error: err.message}),
+                {enableHighAccuracy: true, maximumAge: 0, timeout: 5000}
+            );
+        } else {
+            resolve({error: "瀏覽器不支援定位"});
+        }
+    })
+""", key=f"watch_position_{time.time()}")  # key 加入時間避免快取
+
+if gps_data:
+    if "lat" in gps_data and "lon" in gps_data:
+        st.session_state.user_lat = gps_data["lat"]
+        st.session_state.user_lon = gps_data["lon"]
+        st.success(f"📍 即時定位中：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
+    elif "error" in gps_data:
+        st.warning(f"⚠️ 定位失敗：{gps_data['error']}，使用預設位置 (台北101)")
 
 # =========================
-# 手動輸入地址定位
+# 手動輸入地址（備援）
 # =========================
 with st.form(key="address_form"):
     address_input = st.text_input("📍 手動輸入地址（可選）")
@@ -106,7 +108,7 @@ with st.form(key="address_form"):
             st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
 
 # =========================
-# 更新地圖
+# 更新地圖與最近設施
 # =========================
 def update_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
@@ -119,13 +121,14 @@ def update_map():
     nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
     filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
-    # 設備 icon
+    # 一般設施 icon
     filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 40,
         "height": 40,
         "anchorY": 40
     })
+    # 最近設施 icon（放大）
     nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 60,
@@ -148,7 +151,7 @@ def update_map():
         "tooltip": "您目前的位置"
     }])
 
-    # 建立圖層
+    # 建立地圖圖層
     layers = []
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
@@ -164,6 +167,8 @@ def update_map():
                 auto_highlight=True,
                 name=f_type
             ))
+
+    # 最近設施
     layers.append(pdk.Layer(
         "IconLayer",
         data=nearest_df,
@@ -175,6 +180,8 @@ def update_map():
         auto_highlight=True,
         name="最近設施"
     ))
+
+    # 使用者位置
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -194,6 +201,7 @@ def update_map():
         pitch=0,
         bearing=0
     )
+
     st.pydeck_chart(pdk.Deck(
         map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         initial_view_state=view_state,
@@ -206,18 +214,6 @@ def update_map():
     nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
     nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
     st.table(nearest_df_display.reset_index(drop=True))
-
-# =========================
-# 即時追蹤邏輯
-# =========================
-if realtime_tracking:
-    st.info("📡 即時追蹤模式已啟動，地圖將持續更新。")
-    gps_data = get_gps_location()
-    if gps_data and "lat" in gps_data:
-        st.session_state.user_lat = gps_data["lat"]
-        st.session_state.user_lon = gps_data["lon"]
-    else:
-        st.warning("⚠️ 無法即時取得 GPS 位置，請確認瀏覽器定位權限已開啟。")
 
 # =========================
 # 顯示地圖
