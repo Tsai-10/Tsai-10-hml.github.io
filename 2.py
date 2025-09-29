@@ -1,3 +1,4 @@
+pip show streamlit
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
@@ -206,4 +207,5 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
+
 
