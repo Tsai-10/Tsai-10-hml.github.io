@@ -5,3 +5,4 @@ geopy>=2.4.1
 streamlit-js-eval
 streamlit-aggrid
 streamlit_javascript
+streamlit_autorefresh
