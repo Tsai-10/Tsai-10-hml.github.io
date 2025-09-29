@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import json
-import time
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 
@@ -14,16 +13,16 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 每 5 秒自動刷新頁面（不閃爍）
+# 自動刷新：每 5 秒更新一次
 # =========================
-st.experimental_autorefresh(interval=5000, key="auto_refresh")
+st.autorefresh(interval=5000, key="auto_refresh")
 
 # =========================
 # 使用者位置（可手動輸入）
 # =========================
 user_lat, user_lon = 25.0330, 121.5654  # 預設台北 101
-address_input = st.text_input("📍 請輸入地址（可選）")
 
+address_input = st.text_input("📍 請輸入地址（可選）")
 if address_input:
     geolocator = Nominatim(user_agent="taipei_map_app")
     try:
@@ -32,7 +31,7 @@ if address_input:
             user_lat, user_lon = location.latitude, location.longitude
             st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
         else:
-            st.error("❌ 找不到地址，請確認輸入是否正確")
+            st.error("❌ 找不到地址")
     except Exception as e:
         st.error(f"❌ 地址轉換失敗：{e}")
 
@@ -44,24 +43,26 @@ try:
         data = json.load(f)
     df = pd.DataFrame(data)
 
-    # 修正欄位名稱，去除多餘空白或錯字
+    # 去除欄位名稱中的空白或 tab
     df.columns = df.columns.str.strip()
+
+    # 修正欄位名稱
     df = df.rename(columns={
         "Latitude\t": "Latitude",
         "Longtitude\t": "Longitude",
-        "Lat": "Latitude",
-        "Lng": "Longitude"
+        "Longtitude": "Longitude"
     })
 
-    # 檢查必須欄位是否存在
-    if not {"Latitude", "Longitude"}.issubset(df.columns):
-        st.error("❌ 資料中缺少 Latitude 或 Longitude 欄位，請檢查 data.json")
+    # 確保 Latitude 與 Longitude 存在
+    if "Latitude" not in df.columns or "Longitude" not in df.columns:
+        st.error("❌ 資料檔缺少 Latitude 或 Longitude 欄位，請檢查 data.json 檔案。")
         st.stop()
 
+    # 移除沒有經緯度的資料
     df = df.dropna(subset=["Latitude", "Longitude"])
 
 except Exception as e:
-    st.error(f"❌ 載入設施資料失敗：{e}")
+    st.error(f"❌ 資料載入失敗：{e}")
     st.stop()
 
 # =========================
@@ -89,10 +90,11 @@ with st.sidebar:
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters,
+    axis=1
 )
 
-# 最近的 5 個
+# 取距離最近的 5 筆
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
@@ -105,7 +107,7 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# 最近設施 icon（放大）
+# 最近設施 icon（放大版）+ tooltip 顯示地址與距離
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 60,
@@ -113,7 +115,8 @@ nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "anchorY": 60
 })
 nearest_df["tooltip"] = nearest_df.apply(
-    lambda r: f"{r['Address']}\n距離 {r['distance_from_user']:.0f} 公尺", axis=1
+    lambda r: f"{r['Address']}\n距離 {r['distance_from_user']:.0f} 公尺",
+    axis=1
 )
 
 # 使用者位置
