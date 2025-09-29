@@ -17,9 +17,14 @@ st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，�
 # =========================
 with open("data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
+
 df = pd.DataFrame(data)
-df.columns = df.columns.str.strip()
-df = df.rename(columns={"Latitude": "Latitude", "Longitude": "Longitude"})
+df.columns = [c.strip().replace("Longtitude", "Longitude").replace("Latitude\t", "Latitude") for c in df.columns]
+
+if "Latitude" not in df.columns or "Longitude" not in df.columns:
+    st.error("❌ 資料缺少 Latitude 或 Longitude 欄位")
+    st.stop()
+
 df = df.dropna(subset=["Latitude", "Longitude"])
 
 ICON_MAPPING = {
@@ -52,7 +57,7 @@ if "user_lon" not in st.session_state:
 try:
     location = streamlit_js_eval(
         js_expressions="""
-        new Promise((resolve, reject) => {
+        new Promise((resolve) => {
             navigator.geolocation.getCurrentPosition(
                 (pos) => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
                 (err) => resolve({error: err.message}),
@@ -77,7 +82,7 @@ except Exception as e:
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((st.session_state.user_lat, st.session_state.user_lon), 
+    lambda r: geodesic((st.session_state.user_lat, st.session_state.user_lon),
                        (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
@@ -181,3 +186,9 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
+
+# =========================
+# 每 5 秒自動刷新
+# =========================
+st_autorefresh = st.experimental_data_editor  # 保留頁面不閃爍
+st_autorefresh(interval=5000, key="auto_refresh")
