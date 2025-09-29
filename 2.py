@@ -5,6 +5,7 @@ import json
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from streamlit_js_eval import streamlit_js_eval
+import time
 
 # =========================
 # 頁面設定
@@ -53,6 +54,7 @@ with st.sidebar:
     st.image("1.png", width=250)
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
+    realtime_tracking = st.checkbox("📍 啟用即時追蹤", value=False)
 
 # =========================
 # 使用者位置初始化
@@ -63,34 +65,29 @@ if "user_lon" not in st.session_state:
     st.session_state.user_lon = 121.5654
 
 # =========================
-# 自動 GPS 定位
+# 取得使用者定位（GPS）
 # =========================
-st.subheader("📍 定位方式")
-try:
-    location = streamlit_js_eval(js_expressions="""
-        new Promise((resolve, reject) => {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-                    (err) => resolve({error: err.message})
-                );
-            } else {
-                resolve({error: "瀏覽器不支援定位"});
-            }
-        })
-    """, key="get_geolocation")
-except Exception:
-    location = None
-
-if location and isinstance(location, dict) and "lat" in location:
-    st.session_state.user_lat = location.get("lat", st.session_state.user_lat)
-    st.session_state.user_lon = location.get("lon", st.session_state.user_lon)
-    st.success(f"✅ 已取得 GPS 位置：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
-else:
-    st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
+def get_gps_location():
+    """嘗試使用瀏覽器 GPS 定位"""
+    try:
+        location = streamlit_js_eval(js_expressions="""
+            new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+                        (err) => resolve({error: err.message})
+                    );
+                } else {
+                    resolve({error: "瀏覽器不支援定位"});
+                }
+            })
+        """, key=f"get_geolocation_{time.time()}")  # 避免 cache
+    except Exception:
+        location = None
+    return location
 
 # =========================
-# 手動地址輸入表單
+# 手動輸入地址定位
 # =========================
 with st.form(key="address_form"):
     address_input = st.text_input("📍 手動輸入地址（可選）")
@@ -109,7 +106,7 @@ with st.form(key="address_form"):
             st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
 
 # =========================
-# 更新地圖函數
+# 更新地圖
 # =========================
 def update_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
@@ -209,6 +206,18 @@ def update_map():
     nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
     nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
     st.table(nearest_df_display.reset_index(drop=True))
+
+# =========================
+# 即時追蹤邏輯
+# =========================
+if realtime_tracking:
+    st.info("📡 即時追蹤模式已啟動，地圖將持續更新。")
+    gps_data = get_gps_location()
+    if gps_data and "lat" in gps_data:
+        st.session_state.user_lat = gps_data["lat"]
+        st.session_state.user_lon = gps_data["lon"]
+    else:
+        st.warning("⚠️ 無法即時取得 GPS 位置，請確認瀏覽器定位權限已開啟。")
 
 # =========================
 # 顯示地圖
