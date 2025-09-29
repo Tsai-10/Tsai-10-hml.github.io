@@ -90,22 +90,8 @@ with st.sidebar:
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-    st.markdown("---")
-    st.markdown("🗺️ **地圖主題**")
-    map_theme = st.radio(
-        "請選擇地圖樣式：",
-        ("Carto Voyager（預設，彩色）", "Carto Light（乾淨白底）", "Carto Dark（夜間風格）", "OpenStreetMap 標準"),
-        index=0
-    )
-
-    if map_theme == "Carto Voyager（預設，彩色）":
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-    elif map_theme == "Carto Light（乾淨白底）":
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-    elif map_theme == "Carto Dark（夜間風格）":
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-    else:
-        MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+# 直接使用 Carto Voyager 彩色主題
+MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
 
 # =========================
 # 計算距離 & 找最近的 5 個設施
