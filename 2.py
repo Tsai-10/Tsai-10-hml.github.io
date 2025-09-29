@@ -14,9 +14,13 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 使用者即時定位（自動） 
+# 預設使用者位置
 # =========================
-user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
+user_lat, user_lon = 25.0330, 121.5654  # 台北101
+
+# =========================
+# 取得使用者即時位置 (不刷新頁面)
+# =========================
 location = streamlit_js_eval(
     js_expressions="""
     navigator.geolocation.getCurrentPosition(
@@ -55,8 +59,6 @@ if address_input:
 # =========================
 with open("data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
-
-# 修正欄位名稱空格/錯字
 for d in data:
     if "Latitude\t" in d:
         d["Latitude"] = d.pop("Latitude\t")
@@ -66,7 +68,7 @@ df = pd.DataFrame(data)
 df = df.dropna(subset=["Latitude", "Longitude"])
 
 # =========================
-# 設施圖標對應
+# 設施圖標
 # =========================
 ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
@@ -85,7 +87,7 @@ with st.sidebar:
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 計算距離 & 找最近的 5 個設施
+# 計算距離 & 找最近 5 個設施
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
@@ -103,7 +105,7 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# 最近設施 icon（放大）+ tooltip 加距離
+# 最近設施 icon + tooltip（路名 + 距離）
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 60,
@@ -172,7 +174,7 @@ layers.append(pdk.Layer(
 ))
 
 # =========================
-# 地圖視圖
+# 地圖視圖（中心跟隨使用者位置）
 # =========================
 view_state = pdk.ViewState(
     longitude=user_lon,
