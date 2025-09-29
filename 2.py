@@ -133,8 +133,20 @@ def update_map():
     filtered_df["distance_from_user"] = filtered_df.apply(
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
+
+    # 最近 5 個設施
     nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
     filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
+
+    # 生成 tooltip：類型 + 地址 + 距離
+    filtered_df["tooltip"] = filtered_df.apply(
+        lambda r: f"{r['Type']}\n地址: {r['Address']}",
+        axis=1
+    )
+    nearest_df["tooltip"] = nearest_df.apply(
+        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
+        axis=1
+    )
 
     # 設備 icon
     filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
@@ -156,13 +168,13 @@ def update_map():
         "Address": "您目前的位置",
         "Latitude": user_lat,
         "Longitude": user_lon,
+        "tooltip": "📍 您目前的位置",
         "icon_data": {
             "url": ICON_MAPPING["使用者位置"],
             "width": 60,
             "height": 60,
             "anchorY": 60
-        },
-        "tooltip": "您目前的位置"
+        }
     }])
 
     # 建立圖層
@@ -211,6 +223,7 @@ def update_map():
         pitch=0,
         bearing=0
     )
+
     st.pydeck_chart(pdk.Deck(
         map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         initial_view_state=view_state,
