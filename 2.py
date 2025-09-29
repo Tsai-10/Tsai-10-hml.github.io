@@ -2,77 +2,26 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import json
-from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from streamlit_js_eval import streamlit_js_eval
-import time
 
 # =========================
 # 頁面設定
 # =========================
 st.set_page_config(page_title="Taipei City Walk", layout="wide")
 st.title("🏙️ Taipei City Walk")
-st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
+st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並即時更新最近距離！")
 
 # =========================
-# 使用者即時定位（每 10 秒更新一次）
-# =========================
-st.subheader("📍 目前位置（自動更新，每 10 秒）")
-
-# 自動抓取使用者位置
-location = streamlit_js_eval(
-    js_expressions="""
-    new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-            (err) => resolve({error: err.message}),
-            {enableHighAccuracy: true, timeout: 5000}
-        );
-    });
-    """,
-    key=f"get_geolocation_{int(time.time() // 10)}"  # 每 10 秒重新取值
-)
-
-# 預設位置：台北 101
-user_lat, user_lon = 25.0330, 121.5654
-
-if location and isinstance(location, dict) and "lat" in location:
-    user_lat = location.get("lat", user_lat)
-    user_lon = location.get("lon", user_lon)
-    st.success(f"✅ 使用者位置：({user_lat:.5f}, {user_lon:.5f})")
-elif location and "error" in location:
-    st.warning(f"⚠️ 無法自動定位：{location['error']}")
-
-# =========================
-# 手動輸入地址（備用）
-# =========================
-address_input = st.text_input("📍 或手動輸入地址：")
-if address_input:
-    geolocator = Nominatim(user_agent="taipei_map_app")
-    try:
-        addr_location = geolocator.geocode(address_input, timeout=10)
-        if addr_location:
-            user_lat, user_lon = addr_location.latitude, addr_location.longitude
-            st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
-        else:
-            st.error("❌ 找不到地址")
-    except Exception as e:
-        st.error(f"❌ 地址轉換失敗：{e}")
-
-# =========================
-# 載入設施資料
+# 載入資料
 # =========================
 with open("data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
-
 df = pd.DataFrame(data)
 df.columns = df.columns.str.strip()
-df = df.rename(columns={"Longtitude": "Longitude", "Latitude": "Latitude"})
+df = df.rename(columns={"Latitude\t": "Latitude", "Longtitude\t": "Longitude"})
 df = df.dropna(subset=["Latitude", "Longitude"])
 
-# =========================
-# 設施圖標對應
-# =========================
 ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
@@ -82,19 +31,46 @@ ICON_MAPPING = {
 }
 
 # =========================
-# 側邊欄設定
+# 側邊欄選擇
 # =========================
 with st.sidebar:
-    st.image("1.png", width=250)
-
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
-# 直接使用 Carto Voyager 彩色主題
+# =========================
+# 地圖樣式
+# =========================
 MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
 
 # =========================
-# 計算距離 & 找最近的 5 個設施
+# 自動刷新頁面（非阻塞）
+# =========================
+st_autorefresh = st.experimental_data_editor if hasattr(st, "experimental_data_editor") else st.empty  # 保險 fallback
+
+st.experimental_rerun() if st_autorefresh else None  # 可搭配下一段刷新機制
+
+# =========================
+# 使用者位置
+# =========================
+location = streamlit_js_eval(
+    js_expressions="""
+    navigator.geolocation.getCurrentPosition(
+        (pos) => ({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+        (err) => ({error: err.message})
+    )
+    """,
+    key="get_geolocation"
+)
+
+if location and "lat" in location:
+    user_lat, user_lon = location["lat"], location["lon"]
+    st.success(f"✅ 使用者位置：({user_lat:.5f}, {user_lon:.5f})")
+else:
+    user_lat, user_lon = 25.0330, 121.5654
+    st.warning("⚠️ 無法取得定位，使用預設位置台北101")
+
+# =========================
+# 計算距離 & 最近五個設施
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
@@ -103,7 +79,7 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
-# 一般設施 icon
+# 設置圖標和 tooltip
 filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 40,
@@ -112,16 +88,16 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# 最近設施 icon（放大版）
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 60,
     "height": 60,
     "anchorY": 60
 })
-nearest_df["tooltip"] = nearest_df["Address"]
+nearest_df["tooltip"] = nearest_df.apply(
+    lambda r: f"{r['Address']}\n距離 {r['distance_from_user']:.0f} 公尺", axis=1
+)
 
-# 使用者位置
 user_pos_df = pd.DataFrame([{
     "Type": "使用者位置",
     "Address": "您目前的位置",
@@ -137,11 +113,9 @@ user_pos_df = pd.DataFrame([{
 }])
 
 # =========================
-# 建立地圖圖層
+# 建立圖層
 # =========================
 layers = []
-
-# 一般設施
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
     if not sub_df.empty:
@@ -157,7 +131,6 @@ for f_type in selected_types:
             name=f_type
         ))
 
-# 最近設施（放大）
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -170,7 +143,6 @@ layers.append(pdk.Layer(
     name="最近設施"
 ))
 
-# 使用者位置
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -182,23 +154,8 @@ layers.append(pdk.Layer(
     auto_highlight=True
 ))
 
-# =========================
-# 地圖視圖
-# =========================
-view_state = pdk.ViewState(
-    longitude=user_lon,
-    latitude=user_lat,
-    zoom=15,
-    pitch=0,
-    bearing=0
-)
-
-st.pydeck_chart(pdk.Deck(
-    map_style=MAP_STYLE,
-    initial_view_state=view_state,
-    layers=layers,
-    tooltip={"text": "{tooltip}"}
-))
+view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=15, pitch=0, bearing=0)
+st.pydeck_chart(pdk.Deck(map_style=MAP_STYLE, initial_view_state=view_state, layers=layers, tooltip={"text": "{tooltip}"}))
 
 # =========================
 # 顯示最近設施清單
