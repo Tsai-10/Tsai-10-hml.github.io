@@ -14,9 +14,9 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 每 5 秒自動更新，不閃爍
+# 每 5 秒自動刷新頁面（不閃爍）
 # =========================
-st_autorefresh = st.experimental_rerun  # 自動刷新函式
+st.experimental_autorefresh(interval=5000, key="auto_refresh")
 
 # =========================
 # 使用者位置（可手動輸入）
@@ -32,7 +32,7 @@ if address_input:
             user_lat, user_lon = location.latitude, location.longitude
             st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
         else:
-            st.error("❌ 找不到地址")
+            st.error("❌ 找不到地址，請確認輸入是否正確")
     except Exception as e:
         st.error(f"❌ 地址轉換失敗：{e}")
 
@@ -91,6 +91,8 @@ filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
     lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
 )
+
+# 最近的 5 個
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
@@ -103,7 +105,7 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# 最近設施 icon（放大版）
+# 最近設施 icon（放大）
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 60,
@@ -201,8 +203,3 @@ st.subheader("🏆 最近的 5 個設施")
 nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
 nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.table(nearest_df_display.reset_index(drop=True))
-
-# =========================
-# 5 秒自動更新
-# =========================
-st.experimental_rerun()
