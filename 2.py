@@ -15,7 +15,7 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 載入設施資料並清理欄位
+# 載入設施資料
 # =========================
 try:
     with open("data.json", "r", encoding="utf-8") as f:
@@ -55,9 +55,10 @@ with st.sidebar:
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 使用者定位（手機或手動）
+# 使用者定位
 # =========================
 user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
+location_status = ""  # 用於視覺化提示
 
 # 手機定位
 location = st_javascript("""
@@ -70,11 +71,13 @@ navigator.geolocation.getCurrentPosition(
 
 if location:
     if "error" in location:
-        st.warning(f"⚠️ 定位失敗：{location['error']}")
+        location_status = f"❌ 定位失敗：{location['error']}"
     else:
         user_lat = location.get("latitude", user_lat)
         user_lon = location.get("longitude", user_lon)
-        st.success(f"✅ 定位成功：({user_lat:.5f}, {user_lon:.5f})")
+        location_status = f"✅ 定位成功：({user_lat:.5f}, {user_lon:.5f})"
+else:
+    location_status = "⚠️ 尚未定位"
 
 # 手動輸入地址
 address_input = st.text_input("📍 請輸入地址（可選）")
@@ -84,11 +87,19 @@ if address_input:
         location_manual = geolocator.geocode(address_input, timeout=10)
         if location_manual:
             user_lat, user_lon = location_manual.latitude, location_manual.longitude
-            st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
+            location_status = f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})"
         else:
-            st.error("❌ 找不到地址")
+            location_status = "❌ 找不到地址"
     except Exception as e:
-        st.error(f"❌ 地址轉換失敗：{e}")
+        location_status = f"❌ 地址轉換失敗：{e}"
+
+# 顯示定位狀態（視覺化）
+if location_status.startswith("✅"):
+    st.success(location_status)
+elif location_status.startswith("❌"):
+    st.error(location_status)
+else:
+    st.warning(location_status)
 
 # =========================
 # 自動刷新容器（不閃爍）
@@ -171,7 +182,7 @@ while True:
     view_state = pdk.ViewState(longitude=user_lon, latitude=user_lat, zoom=15, pitch=0, bearing=0)
     with map_container.container():
         st.pydeck_chart(pdk.Deck(
-            map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+            map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style.json",
             initial_view_state=view_state,
             layers=layers,
             tooltip={"text": "{tooltip}"}
