@@ -14,34 +14,25 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 初始化 session_state
+# 使用者即時定位（自動） 
 # =========================
-if "user_lat" not in st.session_state:
-    st.session_state.user_lat = 25.0330  # 台北101預設
-if "user_lon" not in st.session_state:
-    st.session_state.user_lon = 121.5654
-
-# =========================
-# 自動即時定位
-# =========================
-try:
-    location = streamlit_js_eval(js_expressions="""
-        new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
-                (err) => resolve({error: err.message})
-            );
-        })
-    """, key="get_geolocation")
-
-    if location and isinstance(location, dict) and "latitude" in location:
-        st.session_state.user_lat = location["latitude"]
-        st.session_state.user_lon = location["longitude"]
-        st.success(f"✅ 使用者位置：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
-    else:
-        st.warning("⚠️ 無法取得定位，請手動輸入地址。")
-except Exception as e:
-    st.warning(f"⚠️ 定位錯誤：{e}")
+user_lat, user_lon = 25.0330, 121.5654  # 預設台北101
+location = streamlit_js_eval(
+    js_expressions="""
+    navigator.geolocation.getCurrentPosition(
+        (pos) => ({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
+        (err) => ({error: err.message})
+    )
+    """,
+    key="get_geolocation",
+    refresh_on_update=True
+)
+if location and "latitude" in location:
+    user_lat = location["latitude"]
+    user_lon = location["longitude"]
+    st.success(f"✅ 使用者位置：({user_lat:.5f}, {user_lon:.5f})")
+else:
+    st.warning("⚠️ 無法取得定位，請手動輸入地址。")
 
 # =========================
 # 手動輸入地址
@@ -50,11 +41,10 @@ address_input = st.text_input("📍 請輸入地址（可選）")
 if address_input:
     geolocator = Nominatim(user_agent="taipei_map_app")
     try:
-        location = geolocator.geocode(address_input, timeout=10)
-        if location:
-            st.session_state.user_lat = location.latitude
-            st.session_state.user_lon = location.longitude
-            st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
+        loc = geolocator.geocode(address_input, timeout=10)
+        if loc:
+            user_lat, user_lon = loc.latitude, loc.longitude
+            st.success(f"✅ 已定位到輸入地址：({user_lat:.5f}, {user_lon:.5f})")
         else:
             st.error("❌ 找不到地址")
     except Exception as e:
@@ -65,11 +55,14 @@ if address_input:
 # =========================
 with open("data.json", "r", encoding="utf-8") as f:
     data = json.load(f)
-df = pd.DataFrame(data)
 
-# 去掉欄位多餘空白
-df.columns = df.columns.str.strip()
-df = df.rename(columns={"Longtitude": "Longitude"})
+# 修正欄位名稱空格/錯字
+for d in data:
+    if "Latitude\t" in d:
+        d["Latitude"] = d.pop("Latitude\t")
+    if "Longtitude\t" in d:
+        d["Longitude"] = d.pop("Longtitude\t")
+df = pd.DataFrame(data)
 df = df.dropna(subset=["Latitude", "Longitude"])
 
 # =========================
@@ -84,7 +77,7 @@ ICON_MAPPING = {
 }
 
 # =========================
-# 側邊欄設定
+# 側邊欄
 # =========================
 with st.sidebar:
     st.image("1.png", width='stretch')
@@ -96,8 +89,7 @@ with st.sidebar:
 # =========================
 filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((st.session_state.user_lat, st.session_state.user_lon),
-                       (r["Latitude"], r["Longitude"])).meters, axis=1
+    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
 filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
@@ -111,7 +103,7 @@ filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
 })
 filtered_df["tooltip"] = filtered_df["Address"]
 
-# 最近設施 icon（放大版，顯示距離）
+# 最近設施 icon（放大）+ tooltip 加距離
 nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
     "url": ICON_MAPPING.get(x, ""),
     "width": 60,
@@ -126,8 +118,8 @@ nearest_df["tooltip"] = nearest_df.apply(
 user_pos_df = pd.DataFrame([{
     "Type": "使用者位置",
     "Address": "您目前的位置",
-    "Latitude": st.session_state.user_lat,
-    "Longitude": st.session_state.user_lon,
+    "Latitude": user_lat,
+    "Longitude": user_lon,
     "icon_data": {
         "url": ICON_MAPPING["使用者位置"],
         "width": 60,
@@ -141,8 +133,6 @@ user_pos_df = pd.DataFrame([{
 # 建立地圖圖層
 # =========================
 layers = []
-
-# 一般設施
 for f_type in selected_types:
     sub_df = filtered_df[filtered_df["Type"] == f_type]
     if not sub_df.empty:
@@ -158,7 +148,6 @@ for f_type in selected_types:
             name=f_type
         ))
 
-# 最近設施
 layers.append(pdk.Layer(
     "IconLayer",
     data=nearest_df,
@@ -171,7 +160,6 @@ layers.append(pdk.Layer(
     name="最近設施"
 ))
 
-# 使用者位置
 layers.append(pdk.Layer(
     "IconLayer",
     data=user_pos_df,
@@ -187,8 +175,8 @@ layers.append(pdk.Layer(
 # 地圖視圖
 # =========================
 view_state = pdk.ViewState(
-    longitude=st.session_state.user_lon,
-    latitude=st.session_state.user_lat,
+    longitude=user_lon,
+    latitude=user_lat,
     zoom=15,
     pitch=0,
     bearing=0
