@@ -157,19 +157,25 @@ def create_map():
                 name=f_type
             ))
 
-    # 最近設施用放大紅色半透明圓點
+    # 最近設施 IconLayer + 紅色圓點覆蓋
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=nearest_df,
+        get_icon="icon_data",
+        get_size=5,  # 放大圖標
+        size_scale=18,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        tooltip=True
+    ))
     layers.append(pdk.Layer(
         "ScatterplotLayer",
         data=nearest_df,
         get_position='[Longitude, Latitude]',
         get_fill_color=[255, 0, 0, 180],  # 半透明紅
-        get_radius=30,  # 放大
-        pickable=True,
-        auto_highlight=True,
-        radius_scale=1,
-        radius_min_pixels=30,
-        radius_max_pixels=40,
-        tooltip=True
+        get_radius=25,
+        pickable=False
     ))
 
     # 使用者位置 IconLayer
