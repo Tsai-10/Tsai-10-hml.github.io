@@ -268,6 +268,11 @@ def update_nearest_table():
     )
     nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
     nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+    
+    # 加上序號欄
+    nearest_df.insert(0, "序號", range(1, len(nearest_df)+1))
+    
+    table_container.markdown("### 🏆 最近設施")
     table_container.table(nearest_df.reset_index(drop=True))
 
 # 用 while True 取代，並加 try-except 防止停止
@@ -277,4 +282,5 @@ while True:
         time.sleep(REFRESH_INTERVAL)
     except KeyboardInterrupt:
         break
+
 
