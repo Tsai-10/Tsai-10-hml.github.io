@@ -7,6 +7,7 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
+import time
 
 # =========================
 # 頁面設定
@@ -105,7 +106,7 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 手動地址輸入表單（加入錯誤處理）
+# 手動地址輸入表單（降低請求頻率 + 錯誤處理）
 # =========================
 with st.form(key="address_form"):
     address_input = st.text_input("📍 手動輸入地址（可選）")
@@ -114,7 +115,10 @@ with st.form(key="address_form"):
     if submit_button and address_input.strip():
         geolocator = Nominatim(user_agent="taipei_city_walk_app")
         try:
+            # 避免短時間大量請求
+            time.sleep(1)
             loc = geolocator.geocode(address_input, timeout=10)
+            
             if loc:
                 st.session_state.user_lat = loc.latitude
                 st.session_state.user_lon = loc.longitude
