@@ -101,26 +101,6 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 手動地址輸入表單
-# =========================
-with st.form(key="address_form"):
-    address_input = st.text_input("📍 手動輸入地址（可選）")
-    submit_button = st.form_submit_button(label="更新位置")
-    if submit_button and address_input.strip():
-        geolocator = Nominatim(user_agent="taipei_city_walk_app")
-        try:
-            time.sleep(1)
-            loc = geolocator.geocode(address_input, timeout=10)
-            if loc:
-                st.session_state.user_lat = loc.latitude
-                st.session_state.user_lon = loc.longitude
-                st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
-            else:
-                st.error("❌ 找不到該地址，保持原位置")
-        except Exception as e:
-            st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
-
-# =========================
 # 更新地圖函數
 # =========================
 def create_map():
@@ -245,6 +225,7 @@ while True:
     table_container.table(nearest_df.reset_index(drop=True))
 
     time.sleep(REFRESH_INTERVAL)
+
 
 
 
