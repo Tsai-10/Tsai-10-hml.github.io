@@ -3,7 +3,9 @@ import pandas as pd
 import pydeck as pdk
 import json
 import os
+from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
 import time
 
@@ -99,21 +101,44 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
+# 手動地址輸入表單
+# =========================
+with st.form(key="address_form"):
+    address_input = st.text_input("📍 手動輸入地址（可選）")
+    submit_button = st.form_submit_button(label="更新位置")
+    
+    if submit_button and address_input.strip():
+        geolocator = Nominatim(user_agent="taipei_city_walk_app")
+        try:
+            time.sleep(1)
+            loc = geolocator.geocode(address_input, timeout=10)
+            if loc:
+                st.session_state.user_lat = loc.latitude
+                st.session_state.user_lon = loc.longitude
+                st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
+            else:
+                st.error("❌ 找不到該地址，保持原位置")
+        except Exception as e:
+            st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
+
+# =========================
 # 更新地圖函數
 # =========================
 def create_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+
     filtered_df = df[df["Type"].isin(selected_types)].copy()
-    
-    # 設備圖標
+    filtered_df["tooltip"] = filtered_df.apply(
+        lambda r: f"{r['Type']}\n地址: {r['Address']}", axis=1
+    )
     filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 40,
         "height": 40,
         "anchorY": 40
     })
-    
-    # 使用者位置
+
+    # 設置使用者位置
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
         "Address": "您目前的位置",
@@ -127,23 +152,11 @@ def create_map():
             "anchorY": 60
         }
     }])
-    
-    # 計算距離最近 5 個設施
-    filtered_df["distance_from_user"] = filtered_df.apply(
-        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-    )
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-    nearest_df["tooltip"] = nearest_df.apply(
-        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
-        axis=1
-    )
 
+    # 建立圖層
     layers = []
-
-    # 其他設施 IconLayer
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
-        sub_df = sub_df[~sub_df.index.isin(nearest_df.index)]  # 排除最近設施
         if not sub_df.empty:
             layers.append(pdk.Layer(
                 "IconLayer",
@@ -156,21 +169,6 @@ def create_map():
                 auto_highlight=True,
                 name=f_type
             ))
-
-    # 最近設施 IconLayer 放大
-    layers.append(pdk.Layer(
-        "IconLayer",
-        data=nearest_df,
-        get_icon="icon_data",
-        get_size=5,  # 放大圖標
-        size_scale=18,
-        get_position='[Longitude, Latitude]',
-        pickable=True,
-        auto_highlight=True,
-        tooltip=True
-    ))
-
-    # 使用者位置 IconLayer
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -197,15 +195,13 @@ def create_map():
         tooltip={"text": "{tooltip}"}
     )
 
-# =========================
 # 顯示地圖一次
-# =========================
 map_container = st.empty()
 with map_container:
     st.pydeck_chart(create_map())
 
 # =========================
-# 最近設施即時刷新
+# 最近設施即時刷新（距離 + 放大圖標）
 # =========================
 table_container = st.empty()
 REFRESH_INTERVAL = 5  # 秒
@@ -216,8 +212,35 @@ while True:
     filtered_df["distance_from_user"] = filtered_df.apply(
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
-    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-
-    table_container.table(nearest_df.reset_index(drop=True))
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+    nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
+    nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+    
+    # 放大圖標
+    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+        "url": ICON_MAPPING.get(x, ""),
+        "width": 60,
+        "height": 60,
+        "anchorY": 60
+    })
+    nearest_df["tooltip"] = nearest_df.apply(
+        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
+        axis=1
+    )
+    
+    table_container.table(nearest_df_display.reset_index(drop=True))
     time.sleep(REFRESH_INTERVAL)
+
+# =========================
+# 留言回饋系統
+# =========================
+st.subheader("💬 設施回饋")
+with st.form(key="feedback_form"):
+    feedback_type = st.selectbox("選擇設施類型", facility_types)
+    feedback_address = st.text_input("輸入地址")
+    feedback_msg = st.text_area("留言內容")
+    submit_feedback = st.form_submit_button("送出回饋")
+    
+    if submit_feedback and feedback_address.strip():
+        st.success(f"✅ 已收到回饋：{feedback_type} / {feedback_address}\n留言: {feedback_msg}")
+        # 這裡可以選擇存到 JSON 或資料庫
