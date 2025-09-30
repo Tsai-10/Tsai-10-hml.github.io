@@ -136,6 +136,14 @@ def build_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
     filtered_df = df[df["Type"].isin(selected_types)].copy()
 
+    filtered_df["tooltip"] = filtered_df.apply(lambda r: f"{r['Type']}\n地址: {r['Address']}", axis=1)
+    filtered_df["icon_data"] = filtered_df["Type"].map(lambda t: {
+        "url": ICON_MAPPING[t],
+        "width": 40,
+        "height": 40,
+        "anchorY": 40
+    })
+
     # 使用者位置
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
@@ -154,25 +162,20 @@ def build_map():
     layers = []
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
-        sub_df["icon_data"] = sub_df["Type"].map(lambda t: {
-            "url": ICON_MAPPING[t],
-            "width": 40,
-            "height": 40,
-            "anchorY": 40
-        })
-        sub_df["tooltip"] = sub_df.apply(lambda r: f"{r['Type']}\n地址: {r['Address']}", axis=1)
-        layers.append(pdk.Layer(
-            "IconLayer",
-            data=sub_df,
-            get_icon="icon_data",
-            get_size=4,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True,
-            name=f_type
-        ))
+        if not sub_df.empty:
+            layers.append(pdk.Layer(
+                "IconLayer",
+                data=sub_df,
+                get_icon="icon_data",
+                get_size=4,
+                size_scale=12,
+                get_position='[Longitude, Latitude]',
+                pickable=True,
+                auto_highlight=True,
+                name=f_type
+            ))
 
+    # 使用者位置圖層
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -205,7 +208,7 @@ with map_container:
     st.pydeck_chart(deck)
 
 # =========================
-# 自動刷新最近設施表格與圖標大小（不刷新地圖）
+# 自動刷新最近設施表格與圖標大小（不刷新整個地圖）
 # =========================
 table_container = st.empty()
 REFRESH_INTERVAL = 5
@@ -219,7 +222,7 @@ def refresh_nearest():
     nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
     nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 
-    # 更新地圖圖標大小：最近設施放大
+    # 更新圖標大小：最近設施放大
     for layer in deck.layers[:-1]:  # 最後一層是使用者位置
         df_layer = layer.data
         df_layer["icon_data"] = df_layer.apply(
@@ -229,9 +232,16 @@ def refresh_nearest():
                        "anchorY": 70 if r.name in nearest_df.index else 40}, axis=1
         )
 
-    # 表格顯示
+    # 顯示表格
     table_container.markdown("### 🏆 最近設施")
     table_container.dataframe(nearest_df[["Type", "Address", "distance_from_user"]].reset_index(drop=True), use_container_width=True)
 
-# 每次互動刷新
-refresh_nearest()
+# =========================
+# 自動刷新循環（每 REFRESH_INTERVAL 秒刷新表格和最近設施大小）
+# =========================
+while True:
+    try:
+        refresh_nearest()
+        time.sleep(REFRESH_INTERVAL)
+    except KeyboardInterrupt:
+        break
