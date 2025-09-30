@@ -7,6 +7,7 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
+from streamlit_autorefresh import st_autorefresh
 
 # =========================
 # 頁面設定
@@ -19,8 +20,7 @@ st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，�
 # 自動刷新頁面，每 5 秒刷新一次
 # =========================
 REFRESH_INTERVAL = 5  # 秒
-st_autorefresh = st.experimental_rerun
-st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="autorefresh")
+st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 
 # =========================
 # 載入 JSON 資料
