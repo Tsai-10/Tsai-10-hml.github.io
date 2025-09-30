@@ -108,7 +108,7 @@ if location and isinstance(location, dict) and "lat" in location:
     st.session_state.user_lat = location["lat"]
     st.session_state.user_lon = location["lon"]
     st.session_state.accuracy = location.get("accuracy", None)
-    st.success(f"即時定位中：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f}")
+    st.success(f"即時定位中：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
 else:
     st.warning("⚠️ 無法取得即時定位，請確認瀏覽器定位權限是否開啟")
 
@@ -257,5 +257,6 @@ def update_map():
 # 顯示地圖
 # =========================
 update_map()
+
 
 
