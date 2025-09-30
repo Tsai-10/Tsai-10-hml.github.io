@@ -12,7 +12,7 @@ from streamlit_autorefresh import st_autorefresh
 # =========================
 st.set_page_config(page_title="Taipei City Walk", layout="wide")
 st.title("🏙️ Taipei City Walk")
-st.markdown("查找 **飲水機、廁所、垃圾桶** 位置，並回報你發現的新地點 & 設施現況！")
+st.markdown("查找 **飲水機、廁所、垃圾桶及狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
 # 載入 JSON 資料
@@ -251,3 +251,4 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
 nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.dataframe(nearest_df.reset_index(drop=True), use_container_width=True)
+
