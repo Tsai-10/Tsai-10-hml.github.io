@@ -128,8 +128,26 @@ def create_map():
         }
     }])
     
-    # 圖層
+    # 最近設施圖標放大 + 紅色填滿
+    nearest_df = filtered_df.copy()
+    nearest_df["distance_from_user"] = nearest_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
+    nearest_df = nearest_df.nsmallest(5, "distance_from_user").copy()
+    nearest_df["tooltip"] = nearest_df.apply(
+        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
+        axis=1
+    )
+    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+        "url": ICON_MAPPING.get(x, ""),
+        "width": 80,       # 放大圖標
+        "height": 80,
+        "anchorY": 80,
+        "tint": [255, 0, 0] # 紅色填滿
+    })
+    
     layers = []
+    # 一般設施
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
         if not sub_df.empty:
@@ -144,35 +162,18 @@ def create_map():
                 auto_highlight=True,
                 name=f_type
             ))
-    # 最近設施圖標紅色填滿
-    nearest_df = filtered_df.copy()
-    nearest_df["distance_from_user"] = nearest_df.apply(
-        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-    )
-    nearest_df = nearest_df.nsmallest(5, "distance_from_user").copy()
-    nearest_df["tooltip"] = nearest_df.apply(
-        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
-        axis=1
-    )
-    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-        "url": ICON_MAPPING.get(x, ""),
-        "width": 60,
-        "height": 60,
-        "anchorY": 60,
-        "tint": [255, 0, 0]  # 紅色填滿
-    })
+    # 最近設施
     layers.append(pdk.Layer(
         "IconLayer",
         data=nearest_df,
         get_icon="icon_data",
-        get_size=4,
-        size_scale=20,
+        get_size=5,
+        size_scale=25,
         get_position='[Longitude, Latitude]',
         pickable=True,
         auto_highlight=True,
         name="最近設施"
     ))
-    
     # 使用者位置
     layers.append(pdk.Layer(
         "IconLayer",
