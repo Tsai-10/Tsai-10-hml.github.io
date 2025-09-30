@@ -211,6 +211,7 @@ with map_container:
     st.pydeck_chart(create_map())
 
 # =========================
+# =========================
 # 最近設施即時刷新
 # =========================
 table_container = st.empty()
@@ -223,4 +224,8 @@ while True:
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
     nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
-    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺
+    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+
+    table_container.table(nearest_df.reset_index(drop=True))
+
+    time.sleep(REFRESH_INTERVAL)
