@@ -39,7 +39,6 @@ for d in data:
 
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
-
 # =========================
 # 移除「狗便袋箱」
 # =========================
@@ -66,6 +65,29 @@ with st.sidebar:
     st.image("1.png", width=250)
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
+
+    # =========================
+    # 留言回饋系統
+    # =========================
+    st.subheader("💬 留言回饋")
+    feedback_input = st.text_area("請輸入您的建議或回報", height=100)
+    feedback_button = st.button("送出回饋")
+    
+    if feedback_button and feedback_input.strip():
+        feedback_path = "feedback.json"
+        if os.path.exists(feedback_path):
+            with open(feedback_path, "r", encoding="utf-8") as f:
+                feedback_list = json.load(f)
+        else:
+            feedback_list = []
+        feedback_list.append({
+            "feedback": feedback_input.strip(),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+        with open(feedback_path, "w", encoding="utf-8") as f:
+            json.dump(feedback_list, f, ensure_ascii=False, indent=4)
+        st.success("✅ 感謝您的回饋！")
+        st.experimental_rerun()
 
 # =========================
 # 使用者位置初始化
@@ -130,7 +152,7 @@ def create_map():
     )
     nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
-        "width": 70,  # 放大顯眼
+        "width": 70,
         "height": 70,
         "anchorY": 70
     })
@@ -211,21 +233,9 @@ with map_container:
     st.pydeck_chart(create_map())
 
 # =========================
-# =========================
-# 最近設施即時刷新
+# 最近設施即時刷新（單一表格）
 # =========================
 table_container = st.empty()
 REFRESH_INTERVAL = 5  # 秒
 
-while True:
-    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
-    filtered_df = df[df["Type"].isin(selected_types)].copy()
-    filtered_df["distance_from_user"] = filtered_df.apply(
-        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-    )
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
-    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-
-    table_container.table(nearest_df.reset_index(drop=True))
-
-    time.sleep(REFRESH_INTERVAL)
+def update_nearest
