@@ -73,35 +73,44 @@ if "user_lat" not in st.session_state:
     st.session_state.user_lat = 25.0330
 if "user_lon" not in st.session_state:
     st.session_state.user_lon = 121.5654
+if "accuracy" not in st.session_state:
+    st.session_state.accuracy = None
 
 # =========================
-# 自動 GPS 定位
+# 即時 GPS 定位（使用 watchPosition）
 # =========================
-st.subheader("📍 定位方式")
+st.subheader("📍 即時定位")
+location = streamlit_js_eval(
+    js_expressions="""
+    new Promise((resolve, reject) => {
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    resolve({
+                        lat: pos.coords.latitude,
+                        lon: pos.coords.longitude,
+                        accuracy: pos.coords.accuracy
+                    });
+                },
+                (err) => resolve({error: err.message}),
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        } else {
+            resolve({error: "瀏覽器不支援定位"});
+        }
+    })
+    """,
+    key="live_geolocation"
+)
 
-with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
-    try:
-        location = streamlit_js_eval(js_expressions="""
-            new Promise((resolve, reject) => {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-                        (err) => resolve({error: err.message})
-                    );
-                } else {
-                    resolve({error: "瀏覽器不支援定位"});
-                }
-            })
-        """, key="get_geolocation")
-    except Exception:
-        location = None
-
+# 更新使用者位置
 if location and isinstance(location, dict) and "lat" in location:
-    st.session_state.user_lat = location.get("lat", st.session_state.user_lat)
-    st.session_state.user_lon = location.get("lon", st.session_state.user_lon)
-    st.success(f"✅ 已取得 GPS 位置：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
+    st.session_state.user_lat = location["lat"]
+    st.session_state.user_lon = location["lon"]
+    st.session_state.accuracy = location.get("accuracy", None)
+    st.success(f"即時定位中：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f}) ±{st.session_state.accuracy:.1f} 公尺")
 else:
-    st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
+    st.warning("⚠️ 無法取得即時定位，請確認瀏覽器定位權限是否開啟")
 
 # =========================
 # 手動地址輸入表單
@@ -134,11 +143,10 @@ def update_map():
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
 
-    # 最近 5 個設施
     nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
     filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
 
-    # 生成 tooltip：類型 + 地址 + 距離
+    # 生成 tooltip
     filtered_df["tooltip"] = filtered_df.apply(
         lambda r: f"{r['Type']}\n地址: {r['Address']}",
         axis=1
@@ -168,7 +176,7 @@ def update_map():
         "Address": "您目前的位置",
         "Latitude": user_lat,
         "Longitude": user_lon,
-        "tooltip": "📍 您目前的位置",
+        "tooltip": f"📍 您的位置\n誤差 ±{st.session_state.accuracy:.1f} 公尺" if st.session_state.accuracy else "📍 您的位置",
         "icon_data": {
             "url": ICON_MAPPING["使用者位置"],
             "width": 60,
@@ -179,6 +187,8 @@ def update_map():
 
     # 建立圖層
     layers = []
+
+    # 其他設施
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
         if not sub_df.empty:
@@ -193,6 +203,8 @@ def update_map():
                 auto_highlight=True,
                 name=f_type
             ))
+
+    # 最近設施
     layers.append(pdk.Layer(
         "IconLayer",
         data=nearest_df,
@@ -204,6 +216,8 @@ def update_map():
         auto_highlight=True,
         name="最近設施"
     ))
+
+    # 使用者位置
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -212,7 +226,8 @@ def update_map():
         size_scale=20,
         get_position='[Longitude, Latitude]',
         pickable=True,
-        auto_highlight=True
+        auto_highlight=True,
+        name="使用者位置"
     ))
 
     # 地圖視圖
@@ -224,6 +239,7 @@ def update_map():
         bearing=0
     )
 
+    # 更新地圖
     st.pydeck_chart(pdk.Deck(
         map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         initial_view_state=view_state,
