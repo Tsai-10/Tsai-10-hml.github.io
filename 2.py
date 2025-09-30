@@ -52,7 +52,8 @@ ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
-    "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
+    "使用者位置": "https://img.icons8.com/fluency/96/marker.png",
+    "選中設施": "https://img.icons8.com/fluency/96/marker.png"  # 特別標記選中設施
 }
 
 # =========================
@@ -102,7 +103,7 @@ else:
 # =========================
 # 更新地圖函數
 # =========================
-def create_map():
+def create_map(selected_facility=None):
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
     filtered_df = df[df["Type"].isin(selected_types)].copy()
 
@@ -146,8 +147,8 @@ def create_map():
         }
     }])
 
-    # 建立圖層
     layers = []
+    # 普通設施
     for f_type in selected_types:
         sub_df = filtered_df[(filtered_df["Type"] == f_type) & (~filtered_df.index.isin(nearest_df.index))]
         if not sub_df.empty:
@@ -162,6 +163,7 @@ def create_map():
                 auto_highlight=True,
                 name=f_type
             ))
+    # 最近設施
     layers.append(pdk.Layer(
         "IconLayer",
         data=nearest_df,
@@ -173,6 +175,7 @@ def create_map():
         auto_highlight=True,
         name="最近設施"
     ))
+    # 使用者位置
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -183,11 +186,31 @@ def create_map():
         pickable=True,
         auto_highlight=True
     ))
+    # 選中設施標記
+    if selected_facility is not None:
+        sel_df = pd.DataFrame([selected_facility])
+        sel_df["icon_data"] = {
+            "url": ICON_MAPPING["選中設施"],
+            "width": 80,
+            "height": 80,
+            "anchorY": 80
+        }
+        layers.append(pdk.Layer(
+            "IconLayer",
+            data=sel_df,
+            get_icon="icon_data",
+            get_size=4,
+            size_scale=20,
+            get_position='[Longitude, Latitude]',
+            pickable=True,
+            auto_highlight=True,
+            name="選中設施"
+        ))
 
     view_state = pdk.ViewState(
-        longitude=user_lon,
-        latitude=user_lat,
-        zoom=15,
+        longitude=selected_facility["Longitude"] if selected_facility else user_lon,
+        latitude=selected_facility["Latitude"] if selected_facility else user_lat,
+        zoom=17 if selected_facility else 15,
         pitch=0,
         bearing=0
     )
@@ -200,11 +223,9 @@ def create_map():
     )
 
 # =========================
-# 顯示地圖
+# 顯示地圖容器
 # =========================
 map_container = st.empty()
-with map_container:
-    st.pydeck_chart(create_map())
 
 # =========================
 # 最近設施即時刷新（單一表格）
@@ -222,13 +243,6 @@ def update_nearest_table():
     nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
     table_container.table(nearest_df.reset_index(drop=True))
 
-while True:
-    try:
-        update_nearest_table()
-        time.sleep(REFRESH_INTERVAL)
-    except KeyboardInterrupt:
-        break
-
 # =========================
 # 點擊圖標留言系統
 # =========================
@@ -238,6 +252,13 @@ clicked_facility_address = st.selectbox(
     "選擇設施地址",
     options=df[df["Type"] == clicked_facility_type]["Address"].tolist()
 )
+
+# 取得選中設施資訊
+selected_facility = df[(df["Type"] == clicked_facility_type) & (df["Address"] == clicked_facility_address)].iloc[0].to_dict()
+
+# 顯示地圖並標記選中設施
+map_container.pydeck_chart(create_map(selected_facility=selected_facility))
+
 feedback_input = st.text_area("請輸入您的回饋或建議", height=100)
 feedback_button = st.button("送出回饋")
 
