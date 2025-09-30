@@ -8,6 +8,7 @@ from geopy.distance import geodesic
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
 import time
+import threading
 
 # =========================
 # 頁面設定
@@ -20,16 +21,13 @@ st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，�
 # 載入 JSON 資料
 # =========================
 data_path = "data.json"
-
 if not os.path.exists(data_path):
     st.error(f"❌ 找不到資料檔案，請確認 `{data_path}` 是否存在於專案目錄中")
     st.stop()
 
-# 讀取 JSON
 with open(data_path, "r", encoding="utf-8") as f:
     data = json.load(f)
 
-# 清理欄位名稱
 cleaned_data = []
 for d in data:
     cleaned_item = {}
@@ -44,7 +42,6 @@ for d in data:
 
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
-
 if df.empty:
     st.error("⚠️ 資料檔案載入成功，但內容為空，請確認 data.json 是否有正確資料。")
     st.stop()
@@ -77,48 +74,17 @@ if "user_lon" not in st.session_state:
     st.session_state.user_lon = 121.5654
 
 # =========================
-# 自動 GPS 定位
-# =========================
-st.subheader("📍 定位方式")
-
-with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
-    try:
-        location = streamlit_js_eval(js_expressions="""
-            new Promise((resolve, reject) => {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-                        (err) => resolve({error: err.message})
-                    );
-                } else {
-                    resolve({error: "瀏覽器不支援定位"});
-                }
-            })
-        """, key="get_geolocation")
-    except Exception:
-        location = None
-
-if location and isinstance(location, dict) and "lat" in location:
-    st.session_state.user_lat = location.get("lat", st.session_state.user_lat)
-    st.session_state.user_lon = location.get("lon", st.session_state.user_lon)
-    st.success(f"✅ 已取得 GPS 位置：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
-else:
-    st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
-
-# =========================
-# 手動地址輸入表單（降低請求頻率 + 錯誤處理）
+# 手動地址輸入表單
 # =========================
 with st.form(key="address_form"):
     address_input = st.text_input("📍 手動輸入地址（可選）")
     submit_button = st.form_submit_button(label="更新位置")
-
+    
     if submit_button and address_input.strip():
         geolocator = Nominatim(user_agent="taipei_city_walk_app")
         try:
-            # 避免短時間大量請求
             time.sleep(1)
             loc = geolocator.geocode(address_input, timeout=10)
-
             if loc:
                 st.session_state.user_lat = loc.latitude
                 st.session_state.user_lon = loc.longitude
@@ -130,48 +96,20 @@ with st.form(key="address_form"):
         except Exception as e:
             st.error(f"❌ 地址轉換發生未知錯誤，保持原位置：{e}")
 
-
 # =========================
-# 更新地圖函數
+# 建立地圖（只渲染一次）
 # =========================
-def update_map():
+def create_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
 
-    # 計算距離 & 最近 5 個設施
     filtered_df = df[df["Type"].isin(selected_types)].copy()
-    filtered_df["distance_from_user"] = filtered_df.apply(
-        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-    )
-
-    # 最近 5 個設施
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-    filtered_df = filtered_df[~filtered_df.index.isin(nearest_df.index)].copy()
-
-    # 生成 tooltip：類型 + 地址 + 距離
-    filtered_df["tooltip"] = filtered_df.apply(
-        lambda r: f"{r['Type']}\n地址: {r['Address']}",
-        axis=1
-    )
-    nearest_df["tooltip"] = nearest_df.apply(
-        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
-        axis=1
-    )
-
-    # 設備 icon
     filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 40,
         "height": 40,
         "anchorY": 40
     })
-    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-        "url": ICON_MAPPING.get(x, ""),
-        "width": 60,
-        "height": 60,
-        "anchorY": 60
-    })
 
-    # 使用者位置
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
         "Address": "您目前的位置",
@@ -186,7 +124,6 @@ def update_map():
         }
     }])
 
-    # 建立圖層
     layers = []
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
@@ -204,17 +141,6 @@ def update_map():
             ))
     layers.append(pdk.Layer(
         "IconLayer",
-        data=nearest_df,
-        get_icon="icon_data",
-        get_size=4,
-        size_scale=20,
-        get_position='[Longitude, Latitude]',
-        pickable=True,
-        auto_highlight=True,
-        name="最近設施"
-    ))
-    layers.append(pdk.Layer(
-        "IconLayer",
         data=user_pos_df,
         get_icon="icon_data",
         get_size=4,
@@ -224,7 +150,6 @@ def update_map():
         auto_highlight=True
     ))
 
-    # 地圖視圖
     view_state = pdk.ViewState(
         longitude=user_lon,
         latitude=user_lat,
@@ -233,21 +158,59 @@ def update_map():
         bearing=0
     )
 
-    st.pydeck_chart(pdk.Deck(
+    return pdk.Deck(
         map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         initial_view_state=view_state,
         layers=layers,
         tooltip={"text": "{tooltip}"}
-    ))
+    )
 
-    # 顯示最近設施清單
-    st.subheader("🏆 最近的 5 個設施")
-    nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
-    nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-    st.table(nearest_df_display.reset_index(drop=True))
-
+map_container = st.empty()
+with map_container:
+    st.pydeck_chart(create_map())
 
 # =========================
-# 顯示地圖
+# 自動 GPS 更新 + 最近設施距離刷新
 # =========================
-update_map()
+table_container = st.empty()
+REFRESH_INTERVAL = 5  # 秒
+
+def update_loop():
+    while True:
+        # 嘗試自動抓 GPS
+        try:
+            location = streamlit_js_eval(js_expressions="""
+                new Promise((resolve, reject) => {
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+                            (err) => resolve({error: err.message})
+                        );
+                    } else {
+                        resolve({error: "瀏覽器不支援定位"});
+                    }
+                })
+            """, key="get_geolocation_loop")
+            if location and "lat" in location:
+                st.session_state.user_lat = location.get("lat", st.session_state.user_lat)
+                st.session_state.user_lon = location.get("lon", st.session_state.user_lon)
+        except:
+            pass  # 保持原位置
+
+        # 計算距離 & 最近 5 個設施
+        filtered_df = df[df["Type"].isin(selected_types)].copy()
+        filtered_df["distance_from_user"] = filtered_df.apply(
+            lambda r: geodesic(
+                (st.session_state.user_lat, st.session_state.user_lon),
+                (r["Latitude"], r["Longitude"])
+            ).meters,
+            axis=1
+        )
+        nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
+        nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+
+        table_container.table(nearest_df.reset_index(drop=True))
+        time.sleep(REFRESH_INTERVAL)
+
+# 使用 Thread 在 Streamlit 不阻塞主程式
+threading.Thread(target=update_loop, daemon=True).start()
