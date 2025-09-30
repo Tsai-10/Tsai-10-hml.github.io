@@ -52,6 +52,7 @@ ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
+    "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
     "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
 }
 
@@ -273,3 +274,4 @@ while True:
         time.sleep(REFRESH_INTERVAL)
     except KeyboardInterrupt:
         break
+
