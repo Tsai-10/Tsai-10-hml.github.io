@@ -67,27 +67,34 @@ with st.sidebar:
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
     # =========================
-    # 留言回饋系統
     # =========================
-    st.subheader("💬 留言回饋")
-    feedback_input = st.text_area("請輸入您的建議或回報", height=100)
-    feedback_button = st.button("送出回饋")
-    
-    if feedback_button and feedback_input.strip():
-        feedback_path = "feedback.json"
-        if os.path.exists(feedback_path):
-            with open(feedback_path, "r", encoding="utf-8") as f:
-                feedback_list = json.load(f)
-        else:
-            feedback_list = []
-        feedback_list.append({
-            "feedback": feedback_input.strip(),
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-        with open(feedback_path, "w", encoding="utf-8") as f:
-            json.dump(feedback_list, f, ensure_ascii=False, indent=4)
-        st.success("✅ 感謝您的回饋！")
-        st.experimental_rerun()
+# 留言回饋系統（可選設施類型）
+# =========================
+st.subheader("💬 留言回饋")
+feedback_type = st.selectbox("選擇設施類型", ["飲水機", "廁所", "垃圾桶"])
+feedback_input = st.text_area("請輸入您的建議或回報", height=100)
+feedback_button = st.button("送出回饋")
+
+if feedback_button and feedback_input.strip():
+    feedback_path = "feedback.json"
+    # 讀取現有回饋
+    if os.path.exists(feedback_path):
+        with open(feedback_path, "r", encoding="utf-8") as f:
+            feedback_list = json.load(f)
+    else:
+        feedback_list = []
+    # 新增回饋
+    feedback_list.append({
+        "type": feedback_type,
+        "feedback": feedback_input.strip(),
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+    # 存回 JSON
+    with open(feedback_path, "w", encoding="utf-8") as f:
+        json.dump(feedback_list, f, ensure_ascii=False, indent=4)
+    st.success(f"✅ 感謝您的回饋！針對 {feedback_type} 已成功送出。")
+    st.experimental_rerun()
+
 
 # =========================
 # 使用者位置初始化
@@ -255,3 +262,4 @@ while True:
         time.sleep(REFRESH_INTERVAL)
     except KeyboardInterrupt:
         break
+
