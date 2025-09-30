@@ -108,7 +108,7 @@ if location and isinstance(location, dict) and "lat" in location:
     st.session_state.user_lat = location["lat"]
     st.session_state.user_lon = location["lon"]
     st.session_state.accuracy = location.get("accuracy", None)
-    st.success(f"即時定位中：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f}) ±{st.session_state.accuracy:.1f} 公尺")
+    st.success(f"即時定位中：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})
 else:
     st.warning("⚠️ 無法取得即時定位，請確認瀏覽器定位權限是否開啟")
 
@@ -176,7 +176,7 @@ def update_map():
         "Address": "您目前的位置",
         "Latitude": user_lat,
         "Longitude": user_lon,
-        "tooltip": f"📍 您的位置\n誤差 ±{st.session_state.accuracy:.1f} 公尺" if st.session_state.accuracy else "📍 您的位置",
+        "tooltip": f"📍 您的位置",
         "icon_data": {
             "url": ICON_MAPPING["使用者位置"],
             "width": 60,
@@ -257,3 +257,4 @@ def update_map():
 # 顯示地圖
 # =========================
 update_map()
+
