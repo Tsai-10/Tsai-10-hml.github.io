@@ -6,15 +6,11 @@ import os
 from streamlit_javascript import st_javascript
 from geopy.distance import geodesic
 
-# =========================
-# 頁面設定
-# =========================
 st.set_page_config(page_title="Taipei City Walk", layout="wide")
 st.title("🏙️ Taipei City Walk")
-st.markdown("探索台北市的公共設施位置，支援自動定位與最近設施推薦")
 
 # =========================
-# 使用者定位（自動更新）
+# 使用者定位
 # =========================
 def get_user_location():
     """透過瀏覽器取得使用者定位"""
@@ -39,10 +35,8 @@ def get_user_location():
 with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
     user_location = get_user_location()
 
-# === 除錯：顯示回傳值 ===
 st.write("📡 Debug - user_location 回傳值：", user_location)
 
-# 確保 user_location 為字典並且有 latitude、longitude
 if isinstance(user_location, dict) and "latitude" in user_location and "longitude" in user_location:
     st.success(f"目前定位：Lat {user_location['latitude']}, Lng {user_location['longitude']}")
 else:
@@ -61,16 +55,23 @@ if not os.path.exists(json_file):
 with open(json_file, "r", encoding="utf-8") as f:
     data = json.load(f)
 
-# JSON 轉 DataFrame
 facilities = pd.DataFrame(data)
 
-# 檢查必要欄位
+# ===== 修正錯誤欄位名稱 =====
+facilities.columns = facilities.columns.str.strip()  # 去掉隱藏空白或Tab
+facilities = facilities.rename(columns={
+    "Longtitude": "Longitude",
+    "Latitude\t": "Latitude",
+    "Longtitude\t": "Longitude"
+})
+
+# 確認是否有 Latitude / Longitude 欄位
 if "Latitude" not in facilities.columns or "Longitude" not in facilities.columns:
-    st.error("資料缺少 Latitude 或 Longitude 欄位，請確認 JSON 格式。")
+    st.error(f"資料缺少 Latitude 或 Longitude 欄位，現有欄位：{list(facilities.columns)}")
     st.stop()
 
 # =========================
-# 篩選功能
+# 篩選設施
 # =========================
 facility_types = sorted(facilities["Type"].unique())
 selected_types = st.multiselect(
@@ -84,7 +85,6 @@ filtered_df = facilities[facilities["Type"].isin(selected_types)]
 # 計算最近設施
 # =========================
 def find_nearest_facility(user_lat, user_lng, df):
-    """找出距離使用者最近的設施"""
     min_distance = float("inf")
     nearest_facility = None
     for _, row in df.iterrows():
@@ -108,7 +108,7 @@ if user_location is not None:
 # =========================
 layers = []
 
-# 設施點圖層
+# 設施圖層
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=filtered_df,
@@ -129,9 +129,7 @@ if user_location is not None:
         pickable=True
     ))
 
-# =========================
-# Tooltip 設定
-# =========================
+# Tooltip
 tooltip = {
     "html": "<b>名稱:</b> {Name}<br/>"
             "<b>地址:</b> {Address}<br/>"
@@ -139,9 +137,7 @@ tooltip = {
     "style": {"backgroundColor": "steelblue", "color": "white"}
 }
 
-# =========================
-# 地圖呈現
-# =========================
+# 設定地圖中心
 if user_location is not None:
     initial_view_state = pdk.ViewState(
         latitude=user_location["latitude"],
@@ -149,7 +145,6 @@ if user_location is not None:
         zoom=15
     )
 else:
-    # 沒有定位資料時，預設中心在台北市政府
     initial_view_state = pdk.ViewState(latitude=25.0375, longitude=121.5637, zoom=13)
 
 st.pydeck_chart(pdk.Deck(
@@ -159,9 +154,7 @@ st.pydeck_chart(pdk.Deck(
     tooltip=tooltip
 ))
 
-# =========================
-# 顯示最近設施資訊
-# =========================
+# 最近設施顯示
 if nearest_facility is not None:
     st.subheader("📍 最近的設施")
     st.write(f"**名稱**: {nearest_facility['Name']}")
