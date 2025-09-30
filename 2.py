@@ -5,7 +5,7 @@ import json
 import os
 from geopy.distance import geodesic
 from streamlit_js_eval import streamlit_js_eval
-import time
+from streamlit_autorefresh import st_autorefresh
 
 # =========================
 # 頁面設定
@@ -39,7 +39,6 @@ for d in data:
 
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
-
 
 if df.empty:
     st.error("⚠️ 資料檔案載入成功，但內容為空，請確認 data.json 是否有正確資料。")
@@ -248,10 +247,12 @@ with map_container:
     st.pydeck_chart(create_map())
 
 # =========================
-# 最近設施表格（地圖下方）
+# 最近設施表格（地圖下方，自動刷新）
 # =========================
+REFRESH_INTERVAL = 5  # 秒
+st_autorefresh(interval=REFRESH_INTERVAL*1000, key="auto_refresh")
+
 table_container = st.empty()
-REFRESH_INTERVAL = 5
 
 def update_nearest_table():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
@@ -264,14 +265,6 @@ def update_nearest_table():
 
     # 標題
     table_container.markdown("### 🏆 最近設施")
-    # 顯示表格
     table_container.dataframe(nearest_df.reset_index(drop=True), use_container_width=True)
 
-# 使用 while True 自動刷新
-while True:
-    try:
-        update_nearest_table()
-        time.sleep(REFRESH_INTERVAL)
-    except KeyboardInterrupt:
-        break
-
+update_nearest_table()
