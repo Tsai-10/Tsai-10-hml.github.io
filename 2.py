@@ -3,9 +3,11 @@ import pandas as pd
 import pydeck as pdk
 import json
 import os
+from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
-from streamlit_autorefresh import st_autorefresh
+import time
 
 # =========================
 # 頁面設定
@@ -15,17 +17,11 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 自動刷新最近設施距離
-# =========================
-REFRESH_INTERVAL = 5  # 秒
-st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
-
-# =========================
-# 載入資料
+# 載入 JSON 資料
 # =========================
 data_path = "data.json"
 if not os.path.exists(data_path):
-    st.error(f"❌ 找不到資料檔案：{data_path}")
+    st.error(f"❌ 找不到資料檔案，請確認 `{data_path}` 是否存在於專案目錄中")
     st.stop()
 
 with open(data_path, "r", encoding="utf-8") as f:
@@ -46,7 +42,7 @@ for d in data:
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
 if df.empty:
-    st.error("⚠️ 資料為空，請確認 data.json 是否正確。")
+    st.error("⚠️ 資料檔案載入成功，但內容為空，請確認 data.json 是否有正確資料。")
     st.stop()
 
 # =========================
@@ -77,13 +73,13 @@ if "user_lon" not in st.session_state:
     st.session_state.user_lon = 121.5654
 
 # =========================
-# GPS 自動定位
+# 自動 GPS 定位
 # =========================
 st.subheader("📍 定位方式")
 with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
     try:
         location = streamlit_js_eval(js_expressions="""
-            new Promise((resolve) => {
+            new Promise((resolve, reject) => {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                         (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
@@ -93,7 +89,7 @@ with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
                     resolve({error: "瀏覽器不支援定位"});
                 }
             })
-        """, key=f"get_geolocation_{st.time()}")
+        """, key="get_geolocation")
     except Exception:
         location = None
 
@@ -105,28 +101,30 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 手動地址輸入
+# 手動地址輸入表單（降低請求頻率 + 錯誤處理）
 # =========================
 with st.form(key="address_form"):
     address_input = st.text_input("📍 手動輸入地址（可選）")
     submit_button = st.form_submit_button(label="更新位置")
     
     if submit_button and address_input.strip():
-        from geopy.geocoders import Nominatim
         geolocator = Nominatim(user_agent="taipei_city_walk_app")
         try:
+            time.sleep(1)  # 降低請求頻率
             loc = geolocator.geocode(address_input, timeout=10)
             if loc:
                 st.session_state.user_lat = loc.latitude
                 st.session_state.user_lon = loc.longitude
                 st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
             else:
-                st.error("❌ 找不到地址，保持原位置")
-        except Exception:
-            st.error("❌ 地址轉換失敗，保持原位置")
+                st.error("❌ 找不到該地址，保持原位置")
+        except (GeocoderTimedOut, GeocoderServiceError) as e:
+            st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
+        except Exception as e:
+            st.error(f"❌ 地址轉換發生未知錯誤，保持原位置：{e}")
 
 # =========================
-# 建立地圖（只渲染一次）
+# 更新地圖函數（僅顯示地圖一次，不閃爍）
 # =========================
 def create_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
@@ -194,20 +192,27 @@ def create_map():
         tooltip={"text": "{tooltip}"}
     )
 
+# =========================
+# 顯示地圖一次
+# =========================
 map_container = st.empty()
 with map_container:
     st.pydeck_chart(create_map())
 
 # =========================
-# 最近設施距離表格（每刷新即更新）
+# 最近設施即時刷新
 # =========================
 table_container = st.empty()
-user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
-filtered_df = df[df["Type"].isin(selected_types)].copy()
-filtered_df["distance_from_user"] = filtered_df.apply(
-    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters,
-    axis=1
-)
-nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
-nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-table_container.table(nearest_df.reset_index(drop=True))
+REFRESH_INTERVAL = 5  # 秒
+
+while True:
+    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+    filtered_df = df[df["Type"].isin(selected_types)].copy()
+    filtered_df["distance_from_user"] = filtered_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
+    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+
+    table_container.table(nearest_df.reset_index(drop=True))
+    time.sleep(REFRESH_INTERVAL)
