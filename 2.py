@@ -7,8 +7,6 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
-import time
-import threading
 
 # =========================
 # 頁面設定
@@ -16,6 +14,13 @@ import threading
 st.set_page_config(page_title="Taipei City Walk", layout="wide")
 st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
+
+# =========================
+# 自動刷新頁面，每 5 秒刷新一次
+# =========================
+REFRESH_INTERVAL = 5  # 秒
+st_autorefresh = st.experimental_rerun
+st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="autorefresh")
 
 # =========================
 # 載入 JSON 資料
@@ -74,6 +79,34 @@ if "user_lon" not in st.session_state:
     st.session_state.user_lon = 121.5654
 
 # =========================
+# 自動 GPS 定位
+# =========================
+st.subheader("📍 定位方式")
+with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
+    try:
+        location = streamlit_js_eval(js_expressions="""
+            new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+                        (err) => resolve({error: err.message})
+                    );
+                } else {
+                    resolve({error: "瀏覽器不支援定位"});
+                }
+            })
+        """, key=f"get_geolocation_{st.time()}")
+    except Exception:
+        location = None
+
+if location and isinstance(location, dict) and "lat" in location:
+    st.session_state.user_lat = location.get("lat", st.session_state.user_lat)
+    st.session_state.user_lon = location.get("lon", st.session_state.user_lon)
+    st.success(f"✅ 已取得 GPS 位置：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
+else:
+    st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
+
+# =========================
 # 手動地址輸入表單
 # =========================
 with st.form(key="address_form"):
@@ -83,7 +116,6 @@ with st.form(key="address_form"):
     if submit_button and address_input.strip():
         geolocator = Nominatim(user_agent="taipei_city_walk_app")
         try:
-            time.sleep(1)
             loc = geolocator.geocode(address_input, timeout=10)
             if loc:
                 st.session_state.user_lat = loc.latitude
@@ -91,10 +123,8 @@ with st.form(key="address_form"):
                 st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
             else:
                 st.error("❌ 找不到該地址，保持原位置")
-        except (GeocoderTimedOut, GeocoderServiceError) as e:
-            st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
         except Exception as e:
-            st.error(f"❌ 地址轉換發生未知錯誤，保持原位置：{e}")
+            st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
 
 # =========================
 # 建立地圖（只渲染一次）
@@ -170,47 +200,15 @@ with map_container:
     st.pydeck_chart(create_map())
 
 # =========================
-# 自動 GPS 更新 + 最近設施距離刷新
+# 最近設施距離表格
 # =========================
 table_container = st.empty()
-REFRESH_INTERVAL = 5  # 秒
-
-def update_loop():
-    while True:
-        # 嘗試自動抓 GPS
-        try:
-            location = streamlit_js_eval(js_expressions="""
-                new Promise((resolve, reject) => {
-                    if (navigator.geolocation) {
-                        navigator.geolocation.getCurrentPosition(
-                            (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
-                            (err) => resolve({error: err.message})
-                        );
-                    } else {
-                        resolve({error: "瀏覽器不支援定位"});
-                    }
-                })
-            """, key="get_geolocation_loop")
-            if location and "lat" in location:
-                st.session_state.user_lat = location.get("lat", st.session_state.user_lat)
-                st.session_state.user_lon = location.get("lon", st.session_state.user_lon)
-        except:
-            pass  # 保持原位置
-
-        # 計算距離 & 最近 5 個設施
-        filtered_df = df[df["Type"].isin(selected_types)].copy()
-        filtered_df["distance_from_user"] = filtered_df.apply(
-            lambda r: geodesic(
-                (st.session_state.user_lat, st.session_state.user_lon),
-                (r["Latitude"], r["Longitude"])
-            ).meters,
-            axis=1
-        )
-        nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
-        nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-
-        table_container.table(nearest_df.reset_index(drop=True))
-        time.sleep(REFRESH_INTERVAL)
-
-# 使用 Thread 在 Streamlit 不阻塞主程式
-threading.Thread(target=update_loop, daemon=True).start()
+user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+filtered_df = df[df["Type"].isin(selected_types)].copy()
+filtered_df["distance_from_user"] = filtered_df.apply(
+    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters,
+    axis=1
+)
+nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
+nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+table_container.table(nearest_df.reset_index(drop=True))
