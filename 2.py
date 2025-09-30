@@ -147,9 +147,9 @@ def create_map():
     )
     nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
-        "width": 60,
-        "height": 60,
-        "anchorY": 60
+        "width": 75,
+        "height": 75,
+        "anchorY": 75
     })
 
     # 使用者位置
@@ -245,4 +245,5 @@ while True:
     table_container.table(nearest_df.reset_index(drop=True))
 
     time.sleep(REFRESH_INTERVAL)
+
 
