@@ -147,9 +147,9 @@ def create_map():
     )
     nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
-        "width": 75,
-        "height": 75,
-        "anchorY": 75
+        "width": 60,
+        "height": 60,
+        "anchorY": 60
     })
 
     # 使用者位置
@@ -161,9 +161,9 @@ def create_map():
         "tooltip": "📍 您的位置",
         "icon_data": {
             "url": ICON_MAPPING["使用者位置"],
-            "width": 60,
-            "height": 60,
-            "anchorY": 60
+            "width": 70,
+            "height": 70,
+            "anchorY": 70
         }
     }])
 
@@ -245,5 +245,6 @@ while True:
     table_container.table(nearest_df.reset_index(drop=True))
 
     time.sleep(REFRESH_INTERVAL)
+
 
 
