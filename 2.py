@@ -188,7 +188,7 @@ def create_map():
         data=nearest_df,
         get_icon="icon_data",
         get_size=4,
-        size_scale=20,
+        size_scale=20*1.75,
         get_position='[Longitude, Latitude]',
         pickable=True,
         auto_highlight=True,
@@ -245,3 +245,4 @@ while True:
     table_container.table(nearest_df.reset_index(drop=True))
 
     time.sleep(REFRESH_INTERVAL)
+
