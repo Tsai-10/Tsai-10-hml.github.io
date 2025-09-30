@@ -161,9 +161,9 @@ def create_map():
         "tooltip": "📍 您的位置",
         "icon_data": {
             "url": ICON_MAPPING["使用者位置"],
-            "width": 70,
-            "height": 70,
-            "anchorY": 70
+            "width": 75,
+            "height": 75,
+            "anchorY": 75
         }
     }])
 
@@ -188,7 +188,7 @@ def create_map():
         data=nearest_df,
         get_icon="icon_data",
         get_size=4,
-        size_scale=20*1.75,
+        size_scale=20*1.5,
         get_position='[Longitude, Latitude]',
         pickable=True,
         auto_highlight=True,
@@ -245,6 +245,7 @@ while True:
     table_container.table(nearest_df.reset_index(drop=True))
 
     time.sleep(REFRESH_INTERVAL)
+
 
 
 
