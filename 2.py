@@ -5,7 +5,6 @@ import json
 import os
 from streamlit_javascript import st_javascript
 from geopy.distance import geodesic
-import time
 
 # =========================
 # 頁面設定
@@ -22,11 +21,15 @@ def get_user_location():
     loc = st_javascript("""
         async function getLocation() {
             return new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
-                    (err) => resolve(null),
-                    {enableHighAccuracy: true}
-                );
+                if (!navigator.geolocation) {
+                    resolve(null);
+                } else {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude}),
+                        (err) => resolve(null),
+                        {enableHighAccuracy: true}
+                    );
+                }
             });
         }
         return await getLocation();
@@ -36,10 +39,15 @@ def get_user_location():
 with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
     user_location = get_user_location()
 
-if user_location is None:
-    st.warning("無法取得您的位置，請確認瀏覽器定位權限已開啟。")
-else:
+# === 除錯：顯示回傳值 ===
+st.write("📡 Debug - user_location 回傳值：", user_location)
+
+# 確保 user_location 為字典並且有 latitude、longitude
+if isinstance(user_location, dict) and "latitude" in user_location and "longitude" in user_location:
     st.success(f"目前定位：Lat {user_location['latitude']}, Lng {user_location['longitude']}")
+else:
+    st.warning("⚠️ 無法取得您的位置，請確認瀏覽器定位權限是否開啟。")
+    user_location = None
 
 # =========================
 # 載入 JSON 資料
