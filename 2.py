@@ -157,7 +157,7 @@ def create_map():
                 name=f_type
             ))
 
-    # 最近設施 IconLayer + 高亮填滿
+    # 最近設施 IconLayer 放大
     layers.append(pdk.Layer(
         "IconLayer",
         data=nearest_df,
@@ -168,16 +168,6 @@ def create_map():
         pickable=True,
         auto_highlight=True,
         tooltip=True
-    ))
-    # 紅色半透明矩形覆蓋，填滿圖標
-    layers.append(pdk.Layer(
-        "ColumnLayer",
-        data=nearest_df,
-        get_position='[Longitude, Latitude]',
-        get_elevation=0,
-        get_fill_color=[255, 0, 0, 150],  # 半透明紅
-        radius=25,  # 調整剛好覆蓋圖標
-        pickable=False
     ))
 
     # 使用者位置 IconLayer
