@@ -223,27 +223,6 @@ def create_map(selected_facility=None):
     )
 
 # =========================
-# 顯示地圖容器
-# =========================
-map_container = st.empty()
-
-# =========================
-# 最近設施即時刷新（單一表格）
-# =========================
-table_container = st.empty()
-REFRESH_INTERVAL = 5  # 秒
-
-def update_nearest_table():
-    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
-    filtered_df = df[df["Type"].isin(selected_types)].copy()
-    filtered_df["distance_from_user"] = filtered_df.apply(
-        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-    )
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
-    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-    table_container.table(nearest_df.reset_index(drop=True))
-
-# =========================
 # 點擊圖標留言系統
 # =========================
 st.subheader("💬 點擊設施留言")
@@ -255,9 +234,6 @@ clicked_facility_address = st.selectbox(
 
 # 取得選中設施資訊
 selected_facility = df[(df["Type"] == clicked_facility_type) & (df["Address"] == clicked_facility_address)].iloc[0].to_dict()
-
-# 顯示地圖並標記選中設施
-map_container.pydeck_chart(create_map(selected_facility=selected_facility))
 
 feedback_input = st.text_area("請輸入您的回饋或建議", height=100)
 feedback_button = st.button("送出回饋")
@@ -279,3 +255,33 @@ if feedback_button and feedback_input.strip():
         json.dump(feedback_list, f, ensure_ascii=False, indent=4)
     st.success(f"✅ 已送出 {clicked_facility_type} ({clicked_facility_address}) 的回饋！")
     st.experimental_rerun()
+
+# =========================
+# 顯示地圖容器
+# =========================
+map_container = st.empty()
+map_container.pydeck_chart(create_map(selected_facility=selected_facility))
+
+# =========================
+# 最近設施即時刷新（單一表格）
+# =========================
+table_container = st.empty()
+REFRESH_INTERVAL = 5  # 秒
+
+def update_nearest_table():
+    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+    filtered_df = df[df["Type"].isin(selected_types)].copy()
+    filtered_df["distance_from_user"] = filtered_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
+    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+    table_container.table(nearest_df.reset_index(drop=True))
+
+# 即時刷新最近設施表格
+while True:
+    try:
+        update_nearest_table()
+        time.sleep(REFRESH_INTERVAL)
+    except KeyboardInterrupt:
+        break
