@@ -39,10 +39,7 @@ for d in data:
 
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
-# =========================
-# 移除「狗便袋箱」
-# =========================
-df = df[df["Type"] != "狗便袋箱"]
+df = df[df["Type"] != "狗便袋箱"]  # 移除狗便袋箱
 
 if df.empty:
     st.error("⚠️ 資料檔案載入成功，但內容為空，請確認 data.json 是否有正確資料。")
@@ -65,45 +62,6 @@ with st.sidebar:
     st.image("1.png", width=250)
     facility_types = sorted(df["Type"].unique().tolist())
     selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
-
-    # =========================
-    # 留言回饋系統
-    # =========================
-    st.subheader("💬 留言回饋")
-    feedback_type = st.selectbox("選擇設施類型", facility_types)
-    feedback_input = st.text_area("請輸入您的建議或回報", height=100)
-    feedback_button = st.button("送出回饋")
-
-    # 讀取現有回饋
-    feedback_path = "feedback.json"
-    if os.path.exists(feedback_path):
-        with open(feedback_path, "r", encoding="utf-8") as f:
-            feedback_list = json.load(f)
-    else:
-        feedback_list = []
-
-    # 送出回饋
-    if feedback_button and feedback_input.strip():
-        feedback_list.append({
-            "type": feedback_type,
-            "feedback": feedback_input.strip(),
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-        with open(feedback_path, "w", encoding="utf-8") as f:
-            json.dump(feedback_list, f, ensure_ascii=False, indent=4)
-        st.success(f"✅ 感謝您的回饋！針對 {feedback_type} 已成功送出。")
-        feedback_input = ""  # 清空輸入框
-        st.experimental_rerun()
-
-    # 顯示歷史回饋（依設施類型過濾，最新在上）
-    filtered_feedback = [fb for fb in reversed(feedback_list) if fb["type"] == feedback_type]
-
-    if filtered_feedback:
-        st.markdown(f"### 📄 {feedback_type} 歷史回饋")
-        for fb in filtered_feedback:
-            st.markdown(f"- ({fb['timestamp']}): {fb['feedback']}")
-    else:
-        st.markdown(f"尚無 **{feedback_type}** 類型的回饋。")
 
 # =========================
 # 使用者位置初始化
@@ -264,4 +222,39 @@ def update_nearest_table():
     nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
     table_container.table(nearest_df.reset_index(drop=True))
 
-# 用 while True 取代，並加 try-except 防止停止
+while True:
+    try:
+        update_nearest_table()
+        time.sleep(REFRESH_INTERVAL)
+    except KeyboardInterrupt:
+        break
+
+# =========================
+# 點擊圖標留言系統
+# =========================
+st.subheader("💬 點擊設施留言")
+clicked_facility_type = st.selectbox("選擇設施類型", options=selected_types)
+clicked_facility_address = st.selectbox(
+    "選擇設施地址",
+    options=df[df["Type"] == clicked_facility_type]["Address"].tolist()
+)
+feedback_input = st.text_area("請輸入您的回饋或建議", height=100)
+feedback_button = st.button("送出回饋")
+
+if feedback_button and feedback_input.strip():
+    feedback_path = "feedback.json"
+    if os.path.exists(feedback_path):
+        with open(feedback_path, "r", encoding="utf-8") as f:
+            feedback_list = json.load(f)
+    else:
+        feedback_list = []
+    feedback_list.append({
+        "Type": clicked_facility_type,
+        "Address": clicked_facility_address,
+        "feedback": feedback_input.strip(),
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+    with open(feedback_path, "w", encoding="utf-8") as f:
+        json.dump(feedback_list, f, ensure_ascii=False, indent=4)
+    st.success(f"✅ 已送出 {clicked_facility_type} ({clicked_facility_address}) 的回饋！")
+    st.experimental_rerun()
