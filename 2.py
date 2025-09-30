@@ -3,9 +3,7 @@ import pandas as pd
 import pydeck as pdk
 import json
 import os
-from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
 from streamlit_autorefresh import st_autorefresh
 
@@ -17,17 +15,17 @@ st.title("🏙️ Taipei City Walk")
 st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
-# 自動刷新頁面，每 5 秒刷新一次
+# 自動刷新最近設施距離
 # =========================
 REFRESH_INTERVAL = 5  # 秒
 st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
 
 # =========================
-# 載入 JSON 資料
+# 載入資料
 # =========================
 data_path = "data.json"
 if not os.path.exists(data_path):
-    st.error(f"❌ 找不到資料檔案，請確認 `{data_path}` 是否存在於專案目錄中")
+    st.error(f"❌ 找不到資料檔案：{data_path}")
     st.stop()
 
 with open(data_path, "r", encoding="utf-8") as f:
@@ -48,7 +46,7 @@ for d in data:
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
 if df.empty:
-    st.error("⚠️ 資料檔案載入成功，但內容為空，請確認 data.json 是否有正確資料。")
+    st.error("⚠️ 資料為空，請確認 data.json 是否正確。")
     st.stop()
 
 # =========================
@@ -79,13 +77,13 @@ if "user_lon" not in st.session_state:
     st.session_state.user_lon = 121.5654
 
 # =========================
-# 自動 GPS 定位
+# GPS 自動定位
 # =========================
 st.subheader("📍 定位方式")
 with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
     try:
         location = streamlit_js_eval(js_expressions="""
-            new Promise((resolve, reject) => {
+            new Promise((resolve) => {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                         (pos) => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
@@ -107,13 +105,14 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 手動地址輸入表單
+# 手動地址輸入
 # =========================
 with st.form(key="address_form"):
     address_input = st.text_input("📍 手動輸入地址（可選）")
     submit_button = st.form_submit_button(label="更新位置")
     
     if submit_button and address_input.strip():
+        from geopy.geocoders import Nominatim
         geolocator = Nominatim(user_agent="taipei_city_walk_app")
         try:
             loc = geolocator.geocode(address_input, timeout=10)
@@ -122,9 +121,9 @@ with st.form(key="address_form"):
                 st.session_state.user_lon = loc.longitude
                 st.success(f"✅ 已定位到輸入地址：({st.session_state.user_lat:.5f}, {st.session_state.user_lon:.5f})")
             else:
-                st.error("❌ 找不到該地址，保持原位置")
-        except Exception as e:
-            st.error(f"❌ 地址轉換失敗，保持原位置：{e}")
+                st.error("❌ 找不到地址，保持原位置")
+        except Exception:
+            st.error("❌ 地址轉換失敗，保持原位置")
 
 # =========================
 # 建立地圖（只渲染一次）
@@ -200,7 +199,7 @@ with map_container:
     st.pydeck_chart(create_map())
 
 # =========================
-# 最近設施距離表格
+# 最近設施距離表格（每刷新即更新）
 # =========================
 table_container = st.empty()
 user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
