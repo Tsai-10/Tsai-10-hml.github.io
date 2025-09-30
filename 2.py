@@ -3,9 +3,7 @@ import pandas as pd
 import pydeck as pdk
 import json
 import os
-from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
-from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from streamlit_js_eval import streamlit_js_eval
 import time
 
@@ -14,7 +12,7 @@ import time
 # =========================
 st.set_page_config(page_title="Taipei City Walk", layout="wide")
 st.title("🏙️ Taipei City Walk")
-st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
+st.markdown("查找 **飲水機、廁所、垃圾桶** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
 # 載入 JSON 資料
@@ -41,6 +39,12 @@ for d in data:
 
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
+
+# =========================
+# 移除「狗便袋箱」
+# =========================
+df = df[df["Type"] != "狗便袋箱"]
+
 if df.empty:
     st.error("⚠️ 資料檔案載入成功，但內容為空，請確認 data.json 是否有正確資料。")
     st.stop()
@@ -52,7 +56,6 @@ ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
-    "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
     "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
 }
 
@@ -127,9 +130,9 @@ def create_map():
     )
     nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
-        "width": 60,
-        "height": 60,
-        "anchorY": 60
+        "width": 70,  # 放大顯眼
+        "height": 70,
+        "anchorY": 70
     })
 
     # 使用者位置
@@ -220,14 +223,4 @@ while True:
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
     nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
-    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-
-    table_container.table(nearest_df.reset_index(drop=True))
-
-    time.sleep(REFRESH_INTERVAL)
-
-
-
-
-
-
+    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺
