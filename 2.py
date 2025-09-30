@@ -131,21 +131,36 @@ facility_types = sorted(df["Type"].unique().tolist())
 selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 更新地圖函數（只建立一次，避免閃爍）
+# 更新地圖函數
 # =========================
-def create_map():
+def create_map(highlight_address=None):
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
     filtered_df = df[df["Type"].isin(selected_types)].copy()
 
-    # 設定 icon_data 大小：最近設施先空，表格刷新時才會更新
-    filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
-        "url": ICON_MAPPING.get(x, ""),
-        "width": 40,
-        "height": 40,
-        "anchorY": 40
-    })
+    filtered_df["distance_from_user"] = filtered_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
+
+    # 找出最近 5 個設施
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+
+    # 設定 icon_data
+    def make_icon(row):
+        if row.name in nearest_df.index:
+            size = 70  # 最近設施放大
+        else:
+            size = 40  # 其他設施保持原大小
+        return {
+            "url": ICON_MAPPING.get(row["Type"], ""),
+            "width": size,
+            "height": size,
+            "anchorY": size
+        }
+
+    filtered_df["icon_data"] = filtered_df.apply(make_icon, axis=1)
     filtered_df["tooltip"] = filtered_df.apply(lambda r: f"{r['Type']}\n地址: {r['Address']}", axis=1)
 
+    # 使用者位置
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
         "Address": "您目前的位置",
@@ -160,20 +175,24 @@ def create_map():
         }
     }])
 
+    # 建立圖層
     layers = []
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
-        layers.append(pdk.Layer(
-            "IconLayer",
-            data=sub_df,
-            get_icon="icon_data",
-            get_size=4,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True,
-            name=f_type
-        ))
+        if not sub_df.empty:
+            layers.append(pdk.Layer(
+                "IconLayer",
+                data=sub_df,
+                get_icon="icon_data",
+                get_size=4,
+                size_scale=12,
+                get_position='[Longitude, Latitude]',
+                pickable=True,
+                auto_highlight=True,
+                name=f_type
+            ))
+
+    # 使用者位置圖層
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -200,13 +219,15 @@ def create_map():
         tooltip={"text": "{tooltip}"}
     )
 
+# =========================
+# 顯示地圖
+# =========================
 map_container = st.empty()
 with map_container:
-    deck = create_map()
-    st.pydeck_chart(deck)
+    st.pydeck_chart(create_map())
 
 # =========================
-# 最近設施表格（動態刷新距離，不刷新地圖）
+# 最近設施表格（地圖下方）
 # =========================
 table_container = st.empty()
 REFRESH_INTERVAL = 5
@@ -217,67 +238,13 @@ def update_nearest_table():
     filtered_df["distance_from_user"] = filtered_df.apply(
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
     nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 
-    # 更新圖標大小，放大最近設施
-    def make_icon(row):
-        if row.name in nearest_df.index:
-            size = 70
-        else:
-            size = 40
-        return {
-            "url": ICON_MAPPING.get(row["Type"], ""),
-            "width": size,
-            "height": size,
-            "anchorY": size
-        }
-    # 更新圖層資料
-    deck.layers = []
-    for f_type in selected_types:
-        sub_df = filtered_df[filtered_df["Type"] == f_type]
-        sub_df["icon_data"] = sub_df.apply(make_icon, axis=1)
-        deck.layers.append(pdk.Layer(
-            "IconLayer",
-            data=sub_df,
-            get_icon="icon_data",
-            get_size=4,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True,
-            name=f_type
-        ))
-    # 使用者位置圖層
-    user_pos_df = pd.DataFrame([{
-        "Type": "使用者位置",
-        "Address": "您目前的位置",
-        "Latitude": user_lat,
-        "Longitude": user_lon,
-        "tooltip": "📍 您的位置",
-        "icon_data": {
-            "url": ICON_MAPPING["使用者位置"],
-            "width": 75,
-            "height": 75,
-            "anchorY": 75
-        }
-    }])
-    deck.layers.append(pdk.Layer(
-        "IconLayer",
-        data=user_pos_df,
-        get_icon="icon_data",
-        get_size=4,
-        size_scale=20,
-        get_position='[Longitude, Latitude]',
-        pickable=True,
-        auto_highlight=True
-    ))
-
-    # 顯示表格
+    # 標題
     table_container.markdown("### 🏆 最近設施")
-    table_container.dataframe(nearest_df[["Type", "Address", "distance_from_user"]].reset_index(drop=True), use_container_width=True)
+    # 顯示表格
+    table_container.dataframe(nearest_df.reset_index(drop=True), use_container_width=True)
 
-# 自動刷新表格距離
-while True:
-    update_nearest_table()
-    time.sleep(REFRESH_INTERVAL)
+# 每次互動時刷新表格
+update_nearest_table()
