@@ -99,13 +99,13 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 更新地圖函數（僅渲染一次，不閃爍）
+# 更新地圖函數
 # =========================
 def create_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
     filtered_df = df[df["Type"].isin(selected_types)].copy()
     
-    # 一般設施圖標
+    # 設備圖標
     filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 40,
@@ -128,28 +128,22 @@ def create_map():
         }
     }])
     
-    # 最近設施圖標放大 + 紅色填滿
-    nearest_df = filtered_df.copy()
-    nearest_df["distance_from_user"] = nearest_df.apply(
+    # 計算距離最近 5 個設施
+    filtered_df["distance_from_user"] = filtered_df.apply(
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
-    nearest_df = nearest_df.nsmallest(5, "distance_from_user").copy()
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
     nearest_df["tooltip"] = nearest_df.apply(
         lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
         axis=1
     )
-    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-        "url": ICON_MAPPING.get(x, ""),
-        "width": 80,       # 放大圖標
-        "height": 80,
-        "anchorY": 80,
-        "tint": [255, 0, 0] # 紅色填滿
-    })
-    
+
     layers = []
-    # 一般設施
+
+    # 其他設施 IconLayer
     for f_type in selected_types:
         sub_df = filtered_df[filtered_df["Type"] == f_type]
+        sub_df = sub_df[~sub_df.index.isin(nearest_df.index)]  # 排除最近設施
         if not sub_df.empty:
             layers.append(pdk.Layer(
                 "IconLayer",
@@ -162,19 +156,23 @@ def create_map():
                 auto_highlight=True,
                 name=f_type
             ))
-    # 最近設施
+
+    # 最近設施用 ScatterplotLayer 顯眼顯示
     layers.append(pdk.Layer(
-        "IconLayer",
+        "ScatterplotLayer",
         data=nearest_df,
-        get_icon="icon_data",
-        get_size=5,
-        size_scale=25,
         get_position='[Longitude, Latitude]',
+        get_fill_color=[255, 0, 0],
+        get_radius=15,
         pickable=True,
         auto_highlight=True,
-        name="最近設施"
+        radius_scale=1,
+        radius_min_pixels=15,
+        radius_max_pixels=30,
+        tooltip=True
     ))
-    # 使用者位置
+
+    # 使用者位置 IconLayer
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -193,7 +191,7 @@ def create_map():
         pitch=0,
         bearing=0
     )
-    
+
     return pdk.Deck(
         map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         initial_view_state=view_state,
@@ -222,5 +220,6 @@ while True:
     )
     nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
     nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+
     table_container.table(nearest_df.reset_index(drop=True))
     time.sleep(REFRESH_INTERVAL)
