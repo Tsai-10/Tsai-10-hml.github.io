@@ -104,7 +104,7 @@ if "user_lon" not in st.session_state:
 # =========================
 # 自動 GPS 定位
 # =========================
-st.subheader("📍 定位方式")
+st.subheader("📍 自動定位")
 with st.spinner("等待定位中，請允許瀏覽器存取您的位置..."):
     try:
         location = streamlit_js_eval(js_expressions="""
@@ -277,3 +277,4 @@ while True:
         time.sleep(REFRESH_INTERVAL)
     except KeyboardInterrupt:
         break
+
