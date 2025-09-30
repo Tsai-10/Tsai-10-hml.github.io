@@ -6,13 +6,14 @@ import os
 from geopy.distance import geodesic
 from streamlit_js_eval import streamlit_js_eval
 import time
+from threading import Thread
 
 # =========================
 # 頁面設定
 # =========================
 st.set_page_config(page_title="Taipei City Walk", layout="wide")
 st.title("🏙️ Taipei City Walk")
-st.markdown("查找 **飲水機、廁所、垃圾桶** 位置，並回報你發現的新地點 & 設施現況！")
+st.markdown("查找 **飲水機、廁所、垃圾桶、狗便袋箱** 位置，並回報你發現的新地點 & 設施現況！")
 
 # =========================
 # 載入 JSON 資料
@@ -55,6 +56,39 @@ ICON_MAPPING = {
 }
 
 # =========================
+# 側邊欄：留言系統
+# =========================
+with st.sidebar:
+    st.image("1.png", width=250)
+    st.subheader("💬 留言回饋")
+    feedback_type = st.selectbox("選擇設施類型", sorted(df["Type"].unique().tolist()))
+    address_options = df[df["Type"] == feedback_type]["Address"].tolist()
+    feedback_address = st.selectbox("選擇設施地址", address_options)
+    feedback_input = st.text_area("請輸入您的建議或回報", height=100)
+    feedback_button = st.button("送出回饋")
+
+    if feedback_button:
+        if not feedback_type or not feedback_address or not feedback_input.strip():
+            st.warning("⚠️ 請完整選擇類型、地址並輸入回饋內容")
+        else:
+            feedback_path = "feedback.json"
+            if os.path.exists(feedback_path):
+                with open(feedback_path, "r", encoding="utf-8") as f:
+                    feedback_list = json.load(f)
+            else:
+                feedback_list = []
+            feedback_list.append({
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": feedback_type,
+                "address": feedback_address,
+                "feedback": feedback_input.strip()
+            })
+            with open(feedback_path, "w", encoding="utf-8") as f:
+                json.dump(feedback_list, f, ensure_ascii=False, indent=4)
+            st.success("✅ 感謝您的回饋！")
+            st.experimental_rerun()
+
+# =========================
 # 使用者位置初始化
 # =========================
 if "user_lat" not in st.session_state:
@@ -91,60 +125,34 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 側邊欄：留言系統
-# =========================
-with st.sidebar:
-    st.image("1.png", width=250)
-    st.subheader("💬 留言回饋")
-    feedback_type = st.selectbox("選擇設施類型", sorted(df["Type"].unique().tolist()))
-    address_options = df[df["Type"] == feedback_type]["Address"].tolist()
-    feedback_address = st.selectbox("選擇設施地址", address_options)
-    feedback_input = st.text_area("請輸入您的建議或回報", height=100)
-    feedback_button = st.button("送出回饋")
-
-    if feedback_button:
-        if not feedback_type or not feedback_address or not feedback_input.strip():
-            st.warning("⚠️ 請完整選擇類型、地址並輸入回饋內容")
-        else:
-            feedback_path = "feedback.json"
-            if os.path.exists(feedback_path):
-                with open(feedback_path, "r", encoding="utf-8") as f:
-                    feedback_list = json.load(f)
-            else:
-                feedback_list = []
-            feedback_list.append({
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "type": feedback_type,
-                "address": feedback_address,
-                "feedback": feedback_input.strip()
-            })
-            with open(feedback_path, "w", encoding="utf-8") as f:
-                json.dump(feedback_list, f, ensure_ascii=False, indent=4)
-            st.success("✅ 感謝您的回饋！")
-            st.experimental_rerun()
-
-# =========================
-# 選擇顯示設施類型
+# 選擇顯示設施類型（地圖上方）
 # =========================
 facility_types = sorted(df["Type"].unique().tolist())
 selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 建立地圖（只建立一次，不閃爍）
+# 顯示地圖函數（不閃爍）
 # =========================
-def build_map():
+map_container = st.empty()
+def get_map_data():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
     filtered_df = df[df["Type"].isin(selected_types)].copy()
+    filtered_df["distance_from_user"] = filtered_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
 
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+    def make_icon(row):
+        size = 70 if row.name in nearest_df.index else 40
+        return {
+            "url": ICON_MAPPING.get(row["Type"], ""),
+            "width": size,
+            "height": size,
+            "anchorY": size
+        }
+    filtered_df["icon_data"] = filtered_df.apply(make_icon, axis=1)
     filtered_df["tooltip"] = filtered_df.apply(lambda r: f"{r['Type']}\n地址: {r['Address']}", axis=1)
-    filtered_df["icon_data"] = filtered_df["Type"].map(lambda t: {
-        "url": ICON_MAPPING[t],
-        "width": 40,
-        "height": 40,
-        "anchorY": 40
-    })
 
-    # 使用者位置
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
         "Address": "您目前的位置",
@@ -175,7 +183,6 @@ def build_map():
                 name=f_type
             ))
 
-    # 使用者位置圖層
     layers.append(pdk.Layer(
         "IconLayer",
         data=user_pos_df,
@@ -188,11 +195,9 @@ def build_map():
     ))
 
     view_state = pdk.ViewState(
-        longitude=user_lon,
-        latitude=user_lat,
-        zoom=15,
-        pitch=0,
-        bearing=0
+        longitude=st.session_state.user_lon,
+        latitude=st.session_state.user_lat,
+        zoom=15
     )
 
     return pdk.Deck(
@@ -202,46 +207,25 @@ def build_map():
         tooltip={"text": "{tooltip}"}
     )
 
-map_container = st.empty()
-deck = build_map()
-with map_container:
-    st.pydeck_chart(deck)
+map_container.pydeck_chart(get_map_data())
 
 # =========================
-# 自動刷新最近設施表格與圖標大小（不刷新整個地圖）
+# 最近設施表格自動刷新
 # =========================
 table_container = st.empty()
-REFRESH_INTERVAL = 5
+REFRESH_INTERVAL = 5  # 秒
 
-def refresh_nearest():
-    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
-    filtered_df = df[df["Type"].isin(selected_types)].copy()
-    filtered_df["distance_from_user"] = filtered_df.apply(
-        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-    )
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-
-    # 更新圖標大小：最近設施放大
-    for layer in deck.layers[:-1]:  # 最後一層是使用者位置
-        df_layer = layer.data
-        df_layer["icon_data"] = df_layer.apply(
-            lambda r: {"url": ICON_MAPPING.get(r["Type"], ""),
-                       "width": 70 if r.name in nearest_df.index else 40,
-                       "height": 70 if r.name in nearest_df.index else 40,
-                       "anchorY": 70 if r.name in nearest_df.index else 40}, axis=1
+def update_table():
+    while True:
+        user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+        filtered_df = df[df["Type"].isin(selected_types)].copy()
+        filtered_df["distance_from_user"] = filtered_df.apply(
+            lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
         )
-
-    # 顯示表格
-    table_container.markdown("### 🏆 最近設施")
-    table_container.dataframe(nearest_df[["Type", "Address", "distance_from_user"]].reset_index(drop=True), use_container_width=True)
-
-# =========================
-# 自動刷新循環（每 REFRESH_INTERVAL 秒刷新表格和最近設施大小）
-# =========================
-while True:
-    try:
-        refresh_nearest()
+        nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
+        nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+        table_container.markdown("### 🏆 最近設施")
+        table_container.dataframe(nearest_df.reset_index(drop=True), use_container_width=True)
         time.sleep(REFRESH_INTERVAL)
-    except KeyboardInterrupt:
-        break
+
+Thread(target=update_table, daemon=True).start()
