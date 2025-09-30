@@ -5,7 +5,6 @@ import json
 import os
 from geopy.distance import geodesic
 from streamlit_js_eval import streamlit_js_eval
-import time
 
 # =========================
 # 頁面設定
@@ -51,6 +50,7 @@ ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
+    "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
     "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
 }
 
@@ -77,7 +77,7 @@ with st.sidebar:
             else:
                 feedback_list = []
             feedback_list.append({
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": st.time.strftime("%Y-%m-%d %H:%M:%S"),
                 "type": feedback_type,
                 "address": feedback_address,
                 "feedback": feedback_input.strip()
@@ -124,7 +124,7 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 選擇顯示設施類型
+# 選擇顯示設施類型（地圖上方）
 # =========================
 facility_types = sorted(df["Type"].unique().tolist())
 selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
@@ -136,6 +136,7 @@ def create_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
     filtered_df = df[df["Type"].isin(selected_types)].copy()
 
+    # 加入圖標和 tooltip
     filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 40,
@@ -147,18 +148,20 @@ def create_map():
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
 
+    # 最近 5 個設施高亮
     nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+    nearest_df["tooltip"] = nearest_df.apply(
+        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
+        axis=1
+    )
     nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 70,
         "height": 70,
         "anchorY": 70
     })
-    nearest_df["tooltip"] = nearest_df.apply(
-        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
-        axis=1
-    )
 
+    # 使用者位置
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
         "Address": "您目前的位置",
@@ -174,21 +177,22 @@ def create_map():
     }])
 
     layers = []
+    # 其他設施
+    other_df = filtered_df[~filtered_df.index.isin(nearest_df.index)]
+    if not other_df.empty:
+        layers.append(pdk.Layer(
+            "IconLayer",
+            data=other_df,
+            get_icon="icon_data",
+            get_size=3,
+            size_scale=12,
+            get_position='[Longitude, Latitude]',
+            pickable=True,
+            auto_highlight=True,
+            name="其他設施"
+        ))
 
-    # 所有設施
-    layers.append(pdk.Layer(
-        "IconLayer",
-        data=filtered_df,
-        get_icon="icon_data",
-        get_size=3,
-        size_scale=12,
-        get_position='[Longitude, Latitude]',
-        pickable=True,
-        auto_highlight=True,
-        name="所有設施"
-    ))
-
-    # 最近設施加大
+    # 最近設施
     layers.append(pdk.Layer(
         "IconLayer",
         data=nearest_df,
@@ -210,8 +214,7 @@ def create_map():
         size_scale=20,
         get_position='[Longitude, Latitude]',
         pickable=True,
-        auto_highlight=True,
-        name="使用者位置"
+        auto_highlight=True
     ))
 
     view_state = pdk.ViewState(
@@ -235,8 +238,9 @@ def create_map():
 st.pydeck_chart(create_map())
 
 # =========================
-# 最近設施表格
+# 最近設施表格（地圖下方）
 # =========================
+st.markdown("### 🏆 最近設施")
 user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
 filtered_df = df[df["Type"].isin(selected_types)].copy()
 filtered_df["distance_from_user"] = filtered_df.apply(
@@ -244,6 +248,4 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 )
 nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
 nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-
-st.markdown("### 🏆 最近設施")
 st.dataframe(nearest_df.reset_index(drop=True), use_container_width=True)
