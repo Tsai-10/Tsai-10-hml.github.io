@@ -240,7 +240,7 @@ st.pydeck_chart(create_map())
 # 最近設施表格自動更新
 # =========================
 # 每 5 秒刷新一次
-st_autorefresh(interval=5000, key="refresh_table")
+st_autorefresh(interval=20000, key="refresh_table")
 
 st.markdown("### 🏆 最近設施")
 user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
@@ -251,4 +251,5 @@ filtered_df["distance_from_user"] = filtered_df.apply(
 nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
 nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
 st.dataframe(nearest_df.reset_index(drop=True), use_container_width=True)
+
 
