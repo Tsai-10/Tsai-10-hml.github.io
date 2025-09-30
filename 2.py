@@ -39,7 +39,6 @@ for d in data:
 
 df = pd.DataFrame(cleaned_data)
 df = df.dropna(subset=["Latitude", "Longitude"])
-
 # =========================
 # 移除「狗便袋箱」
 # =========================
@@ -64,25 +63,35 @@ ICON_MAPPING = {
 # =========================
 with st.sidebar:
     st.image("1.png", width=250)
+    
     st.subheader("💬 留言回饋")
+    feedback_type = st.selectbox("選擇設施類型", sorted(df["Type"].unique().tolist()))
+    # 地址下拉依選擇類型更新
+    address_options = df[df["Type"] == feedback_type]["Address"].tolist()
+    feedback_address = st.selectbox("選擇設施地址", address_options)
     feedback_input = st.text_area("請輸入您的建議或回報", height=100)
+    
     feedback_button = st.button("送出回饋")
-
-    if feedback_button and feedback_input.strip():
-        feedback_path = "feedback.json"
-        if os.path.exists(feedback_path):
-            with open(feedback_path, "r", encoding="utf-8") as f:
-                feedback_list = json.load(f)
+    if feedback_button:
+        if not feedback_type or not feedback_address or not feedback_input.strip():
+            st.warning("⚠️ 請完整選擇類型、地址並輸入回饋內容")
         else:
-            feedback_list = []
-        feedback_list.append({
-            "feedback": feedback_input.strip(),
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-        with open(feedback_path, "w", encoding="utf-8") as f:
-            json.dump(feedback_list, f, ensure_ascii=False, indent=4)
-        st.success("✅ 感謝您的回饋！")
-        st.experimental_rerun()
+            feedback_path = "feedback.json"
+            if os.path.exists(feedback_path):
+                with open(feedback_path, "r", encoding="utf-8") as f:
+                    feedback_list = json.load(f)
+            else:
+                feedback_list = []
+            feedback_list.append({
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": feedback_type,
+                "address": feedback_address,
+                "feedback": feedback_input.strip()
+            })
+            with open(feedback_path, "w", encoding="utf-8") as f:
+                json.dump(feedback_list, f, ensure_ascii=False, indent=4)
+            st.success("✅ 感謝您的回饋！")
+            st.experimental_rerun()
 
 # =========================
 # 使用者位置初始化
@@ -121,18 +130,19 @@ else:
     st.warning("⚠️ 無法自動定位，請輸入地址或使用預設位置。")
 
 # =========================
-# 地圖上方：選擇設施類型
+# 選擇顯示設施類型（地圖上方）
 # =========================
 facility_types = sorted(df["Type"].unique().tolist())
 selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 更新地圖函數（保留原本放大與圖標設定）
+# 更新地圖函數
 # =========================
-def create_map():
+def create_map(highlight_address=None):
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
     filtered_df = df[df["Type"].isin(selected_types)].copy()
 
+    # 設置圖標與 tooltip
     filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
         "width": 40,
@@ -141,6 +151,7 @@ def create_map():
     })
     filtered_df["tooltip"] = filtered_df.apply(lambda r: f"{r['Type']}\n地址: {r['Address']}", axis=1)
 
+    # 計算距離 & 最近 5 個設施
     filtered_df["distance_from_user"] = filtered_df.apply(
         lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
     )
@@ -151,11 +162,24 @@ def create_map():
     )
     nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
         "url": ICON_MAPPING.get(x, ""),
-        "width": 70,
+        "width": 70,  # 放大顯眼
         "height": 70,
         "anchorY": 70
     })
 
+    # 高亮選中的設施
+    if highlight_address:
+        highlight_df = filtered_df[filtered_df["Address"] == highlight_address]
+        if not highlight_df.empty:
+            highlight_df["icon_data"] = highlight_df["Type"].map(lambda x: {
+                "url": ICON_MAPPING.get(x, ""),
+                "width": 80,
+                "height": 80,
+                "anchorY": 80
+            })
+            nearest_df = pd.concat([nearest_df, highlight_df])
+
+    # 使用者位置
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
         "Address": "您目前的位置",
@@ -170,6 +194,7 @@ def create_map():
         }
     }])
 
+    # 建立圖層
     layers = []
     for f_type in selected_types:
         sub_df = filtered_df[(filtered_df["Type"] == f_type) & (~filtered_df.index.isin(nearest_df.index))]
@@ -225,10 +250,12 @@ def create_map():
 # =========================
 # 顯示地圖
 # =========================
-st.pydeck_chart(create_map())
+map_container = st.empty()
+with map_container:
+    st.pydeck_chart(create_map())
 
 # =========================
-# 地圖下方：最近設施表格
+# 最近設施即時刷新（表格置於地圖下方）
 # =========================
 table_container = st.empty()
 REFRESH_INTERVAL = 5  # 秒
