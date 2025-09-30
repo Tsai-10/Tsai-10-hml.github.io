@@ -238,4 +238,20 @@ with map_container:
 table_container = st.empty()
 REFRESH_INTERVAL = 5  # 秒
 
-def update_nearest
+def update_nearest_table():
+    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+    filtered_df = df[df["Type"].isin(selected_types)].copy()
+    filtered_df["distance_from_user"] = filtered_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
+    nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+    table_container.table(nearest_df.reset_index(drop=True))
+
+# 用 while True 取代，並加 try-except 防止停止
+while True:
+    try:
+        update_nearest_table()
+        time.sleep(REFRESH_INTERVAL)
+    except KeyboardInterrupt:
+        break
