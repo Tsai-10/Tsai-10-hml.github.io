@@ -157,18 +157,18 @@ def create_map():
                 name=f_type
             ))
 
-    # 最近設施用 ScatterplotLayer 顯眼顯示
+    # 最近設施用放大紅色半透明圓點
     layers.append(pdk.Layer(
         "ScatterplotLayer",
         data=nearest_df,
         get_position='[Longitude, Latitude]',
-        get_fill_color=[255, 0, 0],
-        get_radius=15,
+        get_fill_color=[255, 0, 0, 180],  # 半透明紅
+        get_radius=30,  # 放大
         pickable=True,
         auto_highlight=True,
         radius_scale=1,
-        radius_min_pixels=15,
-        radius_max_pixels=30,
+        radius_min_pixels=30,
+        radius_max_pixels=40,
         tooltip=True
     ))
 
