@@ -51,7 +51,6 @@ ICON_MAPPING = {
     "飲水機": "https://img.icons8.com/?size=100&id=chekdcoYm3uJ&format=png&color=1E90FF",
     "廁所": "https://img.icons8.com/?size=100&id=QitPK4f8cxXW&format=png&color=228B22",
     "垃圾桶": "https://img.icons8.com/?size=100&id=102715&format=png&color=696969",
-    "狗便袋箱": "https://img.icons8.com/?size=100&id=124062&format=png&color=A52A2A",
     "使用者位置": "https://img.icons8.com/fluency/96/marker.png"
 }
 
@@ -131,10 +130,34 @@ facility_types = sorted(df["Type"].unique().tolist())
 selected_types = st.multiselect("✅ 選擇顯示設施類型", facility_types, default=facility_types)
 
 # =========================
-# 建立地圖函數
+# 更新地圖函數
 # =========================
-def create_map(filtered_df, nearest_df):
+def create_map():
     user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+    filtered_df = df[df["Type"].isin(selected_types)].copy()
+
+    filtered_df["icon_data"] = filtered_df["Type"].map(lambda x: {
+        "url": ICON_MAPPING.get(x, ""),
+        "width": 40,
+        "height": 40,
+        "anchorY": 40
+    })
+    filtered_df["tooltip"] = filtered_df.apply(lambda r: f"{r['Type']}\n地址: {r['Address']}", axis=1)
+    filtered_df["distance_from_user"] = filtered_df.apply(
+        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+    )
+
+    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
+    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
+        "url": ICON_MAPPING.get(x, ""),
+        "width": 70,
+        "height": 70,
+        "anchorY": 70
+    })
+    nearest_df["tooltip"] = nearest_df.apply(
+        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
+        axis=1
+    )
 
     user_pos_df = pd.DataFrame([{
         "Type": "使用者位置",
@@ -150,38 +173,46 @@ def create_map(filtered_df, nearest_df):
         }
     }])
 
-    layers = [
-        pdk.Layer(
-            "IconLayer",
-            data=filtered_df[~filtered_df.index.isin(nearest_df.index)],
-            get_icon="icon_data",
-            get_size=3,
-            size_scale=12,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True
-        ),
-        pdk.Layer(
-            "IconLayer",
-            data=nearest_df,
-            get_icon="icon_data",
-            get_size=4,
-            size_scale=25,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True
-        ),
-        pdk.Layer(
-            "IconLayer",
-            data=user_pos_df,
-            get_icon="icon_data",
-            get_size=4,
-            size_scale=20,
-            get_position='[Longitude, Latitude]',
-            pickable=True,
-            auto_highlight=True
-        )
-    ]
+    layers = []
+
+    # 所有設施
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=filtered_df,
+        get_icon="icon_data",
+        get_size=3,
+        size_scale=12,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name="所有設施"
+    ))
+
+    # 最近設施加大
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=nearest_df,
+        get_icon="icon_data",
+        get_size=4,
+        size_scale=25,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name="最近設施"
+    ))
+
+    # 使用者位置
+    layers.append(pdk.Layer(
+        "IconLayer",
+        data=user_pos_df,
+        get_icon="icon_data",
+        get_size=4,
+        size_scale=20,
+        get_position='[Longitude, Latitude]',
+        pickable=True,
+        auto_highlight=True,
+        name="使用者位置"
+    ))
 
     view_state = pdk.ViewState(
         longitude=user_lon,
@@ -199,46 +230,20 @@ def create_map(filtered_df, nearest_df):
     )
 
 # =========================
-# 顯示表格和地圖容器
+# 顯示地圖
 # =========================
+st.pydeck_chart(create_map())
+
+# =========================
+# 最近設施表格
+# =========================
+user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
+filtered_df = df[df["Type"].isin(selected_types)].copy()
+filtered_df["distance_from_user"] = filtered_df.apply(
+    lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
+)
+nearest_df = filtered_df.nsmallest(5, "distance_from_user")[["Type", "Address", "distance_from_user"]].copy()
+nearest_df["distance_from_user"] = nearest_df["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
+
 st.markdown("### 🏆 最近設施")
-table_container = st.empty()
-map_container = st.empty()
-
-# =========================
-# 更新資料函數
-# =========================
-REFRESH_INTERVAL = 5  # 秒
-
-def update():
-    user_lat, user_lon = st.session_state.user_lat, st.session_state.user_lon
-    filtered_df = df[df["Type"].isin(selected_types)].copy()
-    filtered_df["distance_from_user"] = filtered_df.apply(
-        lambda r: geodesic((user_lat, user_lon), (r["Latitude"], r["Longitude"])).meters, axis=1
-    )
-    nearest_df = filtered_df.nsmallest(5, "distance_from_user").copy()
-    nearest_df["icon_data"] = nearest_df["Type"].map(lambda x: {
-        "url": ICON_MAPPING.get(x, ""),
-        "width": 70,
-        "height": 70,
-        "anchorY": 70
-    })
-    nearest_df["tooltip"] = nearest_df.apply(
-        lambda r: f"🏆 最近設施\n類型: {r['Type']}\n地址: {r['Address']}\n距離: {r['distance_from_user']:.0f} 公尺",
-        axis=1
-    )
-
-    # 更新表格
-    nearest_df_display = nearest_df[["Type", "Address", "distance_from_user"]].copy()
-    nearest_df_display["distance_from_user"] = nearest_df_display["distance_from_user"].apply(lambda x: f"{x:.0f} 公尺")
-    table_container.dataframe(nearest_df_display.reset_index(drop=True), use_container_width=True)
-
-    # 更新地圖
-    map_container.pydeck_chart(create_map(filtered_df, nearest_df))
-
-# =========================
-# 自動刷新
-# =========================
-while True:
-    update()
-    time.sleep(REFRESH_INTERVAL)
+st.dataframe(nearest_df.reset_index(drop=True), use_container_width=True)
